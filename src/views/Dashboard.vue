@@ -129,9 +129,14 @@
                 <EChart class="bd-chart" :option="boardProcurementChart" />
               </div>
               <div class="board-card" @click="enterDrill('contract')">
-                <div class="bd-header"><span class="bd-icon">📋</span><span class="bd-name">合同管理</span><RiskBadge level="high" /></div>
-                <div class="bd-kpis"><span class="bd-kpi"><strong>18</strong><small>份合同</small></span><span class="bd-kpi warn"><strong>3</strong><small>高风险条款</small></span><span class="bd-kpi"><strong>80%</strong><small>已付款</small></span></div>
-                <EChart class="bd-chart" :option="boardContractChart" />
+                <div class="bd-header"><span class="bd-icon">📋</span><span class="bd-name">合同总览</span><RiskBadge :level="contractBoardRiskLevel" /></div>
+                <div class="bd-kpis contract-kpis">
+                  <span class="bd-kpi"><strong>{{ contractBoardTotal }}</strong><small>份合同</small></span>
+                  <span class="bd-kpi"><strong>{{ contractBoardAmount }}</strong><small>亿元</small></span>
+                  <span class="bd-kpi warn"><strong>{{ contractBoardHighRisk }}</strong><small>高风险</small></span>
+                  <span class="bd-kpi"><strong>{{ contractBoardExpiring }}</strong><small>本月到期</small></span>
+                </div>
+                <EChart class="bd-chart" :option="boardContractOverviewChart" />
               </div>
             </div>
           </section>
@@ -1380,17 +1385,34 @@ const boardProcurementChart = computed(() => ({
   }],
 }))
 
-const boardContractChart = computed(() => ({
-  backgroundColor: 'transparent',
-  grid: { left: 8, right: 8, top: 8, bottom: 20 },
-  tooltip: { trigger: 'axis' },
-  xAxis: { type: 'value', max: 100, axisLabel: { color: '#8ba3c7', fontSize: 9 }, splitLine: { lineStyle: { color: 'rgba(59,130,246,0.08)' } } },
-  yAxis: { type: 'category', data: ['0312', '0098', '4412', '0123'], axisLabel: { color: '#8ba3c7', fontSize: 10 } },
-  series: [
-    { type: 'bar', data: [62, 49, 78, 35], itemStyle: { color: '#3b82f6' }, barWidth: 10 },
-    { type: 'bar', data: [80, 45, 70, 30], itemStyle: { color: '#ef4444' }, barWidth: 10 },
-  ],
-}))
+// ==================== 合同驾驶舱总览 ====================
+const contractBoardTotal = computed(() => CONTRACTS.length)
+const contractBoardAmount = computed(() => CONTRACTS.reduce((s, c) => s + c.amountYi, 0).toFixed(1))
+const contractBoardHighRisk = computed(() => CONTRACTS.filter(c => c.level === 'high' || c.level === 'critical').length)
+const contractBoardExpiring = computed(() => 3) // 模拟：3 份本月到期
+const contractBoardRiskLevel = computed(() => contractBoardHighRisk.value >= 2 ? 'high' : 'medium')
+
+const boardContractOverviewChart = computed(() => {
+  const dist = { '重大风险': 0, '高风险': 0, '中风险': 0, '低风险': 0 }
+  CONTRACTS.forEach(c => {
+    if (c.level === 'critical') dist['重大风险']++
+    else if (c.level === 'high') dist['高风险']++
+    else if (c.level === 'medium') dist['中风险']++
+    else dist['低风险']++
+  })
+  return {
+    backgroundColor: 'transparent',
+    tooltip: { trigger: 'item' },
+    series: [{
+      type: 'pie', radius: ['40%', '68%'], center: ['50%', '50%'],
+      label: { show: false },
+      emphasis: { label: { show: true, fontSize: 11, color: '#e8f1ff' } },
+      data: Object.entries(dist).filter(([, v]) => v > 0).map(([n, v]) => ({ name: n, value: v })),
+      itemStyle: { borderColor: '#040d1a', borderWidth: 2 },
+      color: ['#ef4444', '#f97316', '#eab308', '#22c55e'],
+    }],
+  }
+})
 
 // ==================== LEFT COLUMN ====================
 
@@ -1471,7 +1493,7 @@ const fundsMicroKPIs = [
 const topContracts = computed(() => CONTRACTS.slice(0, 4))
 const overpayWarning = computed(() => {
   const ct = CONTRACT_DETAILS['CT-2026-0312']
-  if (ct?.performance?.overpaymentWarning) return 'CT-2026-0312 付款进度超前于交付进度！'
+  if (ct?.performance?.overpaymentWarning) return 'CT-2026-0312 已全额付款，交付仅60%！'
   return null
 })
 
@@ -1483,7 +1505,7 @@ const centerKPIs = [
   { label: '账户', display: '1,246', sub: '司库全景池', isRisk: false },
   { label: '项目', display: '42', sub: '投资可下钻', isRisk: false },
   { label: '风险', display: '37', sub: '闭环可跟踪', isRisk: true },
-  { label: '合同', display: '18', sub: 'NLP智能解析', isRisk: false },
+  { label: '合同', display: '7', sub: 'AI条款智能解析', isRisk: false },
   { label: '在途资金', display: '1,247亿', sub: '司库实时监控', isRisk: true },
 ]
 
@@ -2568,8 +2590,8 @@ onUnmounted(() => { clearInterval(toastTimer) })
 .kpi-sub { font-size: 9px; color: #5a7a9a; margin-top: 1px; }
 
 /* ==================== CENTER Heatmap/Table/Entries ==================== */
-.panel-heatmap { flex: 2; min-height: 160px; }
-.panel-table { flex: 1.5; min-height: 120px; overflow: hidden; }
+.panel-heatmap { flex: 1.6; min-height: 140px; }
+.panel-table { flex: 1.2; min-height: 100px; overflow: auto; }
 
 /* ==================== FUNDS MICRO CARDS ==================== */
 .funds-micro-grid {
@@ -2635,24 +2657,25 @@ onUnmounted(() => { clearInterval(toastTimer) })
 .row-risk td { background: rgba(239,68,68,0.1) !important; color: #fca5a5; }
 
 /* ==================== MODULE BOARDS (2x2) ==================== */
-.module-boards { flex: 0 0 auto; min-height: 240px; }
-.board-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; height: calc(100% - 22px); }
+.module-boards { flex: 2; min-height: 280px; overflow: auto; padding: 10px 10px 6px; background: rgba(10, 40, 70, 0.55); border: 1px solid rgba(0, 229, 255, 0.12); border-radius: 8px; display: flex; flex-direction: column; }
+.board-grid { flex: 1; display: grid; grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, 1fr); gap: 6px; min-height: 240px; }
 .board-card {
-  background: rgba(10, 40, 70, 0.5); border: 1px solid rgba(0, 229, 255, 0.12);
-  border-radius: 7px; padding: 10px; cursor: pointer;
-  display: flex; flex-direction: column; gap: 6px;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  background: rgba(8, 30, 55, 0.6); border: 1px solid rgba(0, 229, 255, 0.1);
+  border-radius: 7px; padding: 6px 8px; cursor: pointer;
+  display: flex; flex-direction: column; gap: 2px;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
+  overflow: hidden;
 }
-.board-card:hover { border-color: rgba(59, 130, 246, 0.5); box-shadow: 0 0 16px rgba(59, 130, 246, 0.15); }
-.bd-header { display: flex; align-items: center; gap: 6px; }
-.bd-icon { font-size: 15px; }
-.bd-name { font-size: 12px; font-weight: 600; color: #c0d8f0; }
-.bd-kpis { display: flex; gap: 12px; }
+.board-card:hover { border-color: rgba(0, 229, 255, 0.35); box-shadow: 0 0 16px rgba(0, 229, 255, 0.12); transform: translateY(-1px); }
+.bd-header { display: flex; align-items: center; gap: 5px; margin-bottom: 1px; }
+.bd-icon { font-size: 14px; }
+.bd-name { font-size: 11px; font-weight: 600; color: #e8f1ff; }
+.bd-kpis { display: flex; gap: 8px; margin-bottom: 2px; }
 .bd-kpi { display: flex; flex-direction: column; align-items: flex-start; }
-.bd-kpi strong { font-size: 15px; font-weight: 700; font-family: ui-monospace, monospace; color: #e8f1ff; }
-.bd-kpi small { font-size: 9px; color: #5a7a9a; }
+.bd-kpi strong { font-size: 13px; font-weight: 700; font-family: ui-monospace, monospace; color: #e8f1ff; }
+.bd-kpi small { font-size: 8px; color: #5a7a9a; }
 .bd-kpi.warn strong { color: #ef4444; }
-.bd-chart { flex: 1; min-height: 60px; }
+.bd-chart { flex: 1; min-height: 45px; }
 
 /* ==================== BREADCRUMB NAVIGATION ==================== */
 .drill-bc-link { cursor: pointer; color: #93c5fd; transition: color 0.15s; }
@@ -3086,26 +3109,6 @@ onUnmounted(() => { clearInterval(toastTimer) })
 .sug-medium { background: rgba(234,179,8,0.15); color: #eab308; }
 .sug-title { font-size: 14px; font-weight: 600; color: #e8f1ff; }
 .sug-body { font-size: 12px; color: #8ba3c7; line-height: 1.6; }
-
-/* ==================== MODULE BOARDS ==================== */
-.module-boards { flex: 1.4; min-height: 220px; overflow: hidden; padding: 10px; background: rgba(10, 40, 70, 0.55); border: 1px solid rgba(0, 229, 255, 0.12); border-radius: 8px; }
-.board-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; height: calc(100% - 28px); }
-.board-card {
-  background: rgba(8, 30, 55, 0.6); border: 1px solid rgba(0, 229, 255, 0.1);
-  border-radius: 8px; padding: 10px; cursor: pointer;
-  display: flex; flex-direction: column;
-  transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
-}
-.board-card:hover { border-color: rgba(0, 229, 255, 0.35); box-shadow: 0 0 16px rgba(0, 229, 255, 0.12); transform: translateY(-1px); }
-.bd-header { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
-.bd-icon { font-size: 16px; }
-.bd-name { font-size: 13px; font-weight: 600; color: #e8f1ff; }
-.bd-kpis { display: flex; gap: 10px; margin-bottom: 6px; }
-.bd-kpi { display: flex; flex-direction: column; align-items: center; }
-.bd-kpi strong { font-size: 16px; font-weight: 700; font-family: ui-monospace, monospace; color: #e8f1ff; }
-.bd-kpi small { font-size: 9px; color: #5a7a9a; }
-.bd-kpi.warn strong { color: #ef4444; }
-.bd-chart { flex: 1; min-height: 70px; }
 
 /* ==================== DRILL BREADCRUMB ==================== */
 .drill-bc-link { color: #93c5fd; cursor: pointer; transition: color 0.15s; }
