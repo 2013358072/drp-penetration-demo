@@ -114,8 +114,12 @@
             <h3 class="p-title">核心业务穿透 · 点击下钻</h3>
             <div class="board-grid">
               <div class="board-card" @click="enterDrill('investment')">
-                <div class="bd-header"><span class="bd-icon">📊</span><span class="bd-name">投资管理</span><RiskBadge level="high" /></div>
-                <div class="bd-kpis"><span class="bd-kpi"><strong>42</strong><small>个项目</small></span><span class="bd-kpi warn"><strong>P01</strong><small>超预算18.6%</small></span><span class="bd-kpi"><strong>500</strong><small>亿计划</small></span></div>
+                <div class="bd-header"><span class="bd-icon">📊</span><span class="bd-name">投资管理</span><RiskBadge :level="investmentBoardRiskLevel" /></div>
+                <div class="bd-kpis">
+                  <span class="bd-kpi"><strong>{{ investmentBoardProjectCount }}</strong><small>个项目</small></span>
+                  <span class="bd-kpi warn"><strong>{{ investmentBoardFocusProject.code }}</strong><small>超预算{{ investmentBoardFocusProject.overBudgetRate }}</small></span>
+                  <span class="bd-kpi"><strong>{{ investmentBoardBudgetTotal }}</strong><small>亿计划</small></span>
+                </div>
                 <EChart class="bd-chart" :option="boardInvestChart" />
               </div>
               <div class="board-card" @click="enterDrill('funds')">
@@ -200,14 +204,20 @@
               <!-- L0: 集团投资总览 -->
               <template v-if="drillNode?.level === 0">
                 <h3 class="p-title">集团投资总览</h3>
+                <div class="detail-meta-row" style="margin-bottom:10px">
+                  <div class="dm-item" v-for="item in investmentCockpitKPIs" :key="item.label">
+                    <span class="dm-k">{{ item.label }}</span>
+                    <span class="dm-v" :style="{ color: item.warn ? 'var(--risk-red)' : '' }">{{ item.value }}</span>
+                  </div>
+                </div>
                 <EChart class="drill-chart" :option="investOverviewChart" />
                 <div class="compact-table-wrap" style="margin-top:10px">
                   <table class="compact-table">
-                    <thead><tr><th>板块</th><th>在投项目</th><th>预算(亿)</th><th>实际(亿)</th><th>偏差</th></tr></thead>
+                    <thead><tr><th>板块</th><th>在投项目</th><th>完成率</th><th>预算(亿)</th><th>实际(亿)</th><th>超预算项目</th><th>风险</th></tr></thead>
                     <tbody>
                       <tr v-for="s in investSectorSummary" :key="s.name">
-                        <td>{{ s.name }}</td><td>{{ s.count }}</td>
-                        <td>{{ s.totalBudget }}</td><td>{{ s.totalActual }}</td>
+                        <td>{{ s.name }}</td><td>{{ s.count }}</td><td>{{ s.progress }}%</td>
+                        <td>{{ s.totalBudget }}</td><td>{{ s.totalActual }}</td><td :style="{ color: s.overBudgetCount > 0 ? 'var(--risk-red)' : '' }">{{ s.overBudgetCount }}</td>
                         <td><RiskBadge :level="s.risk" /></td>
                       </tr>
                     </tbody>
@@ -233,11 +243,11 @@
                 <h3 class="p-title">{{ drillNode.label }}</h3>
                 <div class="compact-table-wrap">
                   <table class="compact-table">
-                    <thead><tr><th>项目</th><th>预算(亿)</th><th>实际(亿)</th><th>状态</th><th>阶段</th><th>风险</th></tr></thead>
+                    <thead><tr><th>项目</th><th>预算(亿)</th><th>实际(亿)</th><th>进度</th><th>状态</th><th>阶段</th><th>风险</th></tr></thead>
                     <tbody>
                       <tr v-for="p in filterProjectsByCompany" :key="p.id">
-                        <td>{{ p.name }}</td><td>{{ p.budgetYi }}</td><td>{{ p.actualYi }}</td>
-                        <td>{{ p.status }}</td><td>{{ p.phase }}</td><td><RiskBadge :level="p.risk" /></td>
+                        <td>{{ p.name }}</td><td>{{ p.budgetYi }}</td><td :style="{ color: p.actualYi > p.budgetYi ? 'var(--risk-red)' : '' }">{{ p.actualYi }}</td>
+                        <td>{{ p.progress }}%</td><td>{{ p.status }}</td><td>{{ p.phase }}</td><td><RiskBadge :level="p.risk" /></td>
                       </tr>
                     </tbody>
                   </table>
@@ -249,12 +259,32 @@
                 <div class="detail-meta-row" v-if="investProjectDetail">
                   <div class="dm-item"><span class="dm-k">项目名称</span><span class="dm-v">{{ investProjectDetail.name }}</span></div>
                   <div class="dm-item"><span class="dm-k">预算</span><span class="dm-v">{{ investProjectDetail.budgetYi }} 亿</span></div>
-                  <div class="dm-item"><span class="dm-k">实际</span><span class="dm-v" style="color:var(--risk-red)">{{ investProjectDetail.actualYi }} 亿</span></div>
+                  <div class="dm-item"><span class="dm-k">实际</span><span class="dm-v" :style="{ color: investProjectDetail.actualYi > investProjectDetail.budgetYi ? 'var(--risk-red)' : '' }">{{ investProjectDetail.actualYi }} 亿</span></div>
+                  <div class="dm-item"><span class="dm-k">进度</span><span class="dm-v">{{ investProjectProfile.progress }}%</span></div>
                   <div class="dm-item"><span class="dm-k">状态</span><span class="dm-v"><RiskBadge :level="investProjectDetail.risk" /></span></div>
                   <div class="dm-item"><span class="dm-k">阶段</span><span class="dm-v">{{ investProjectDetail.phase }}</span></div>
+                  <div class="dm-item"><span class="dm-k">超预算偏差</span><span class="dm-v" :style="{ color: investProjectProfile.overBudgetRate > 0 ? 'var(--risk-red)' : 'var(--risk-green)' }">{{ signedPercentText(investProjectProfile.overBudgetRate) }}</span></div>
+                  <div class="dm-item"><span class="dm-k">关联交易占比</span><span class="dm-v" :style="{ color: investmentProjectRiskLevel !== 'low' ? 'var(--risk-orange)' : '' }">{{ toPercentText(investProjectProfile.relatedTradeRatio) }}</span></div>
+                  <div class="dm-item"><span class="dm-k">风险结论</span><span class="dm-v">{{ investmentProjectRiskText }}</span></div>
+                </div>
+                <div class="detail-meta-row" v-if="investProjectProfile" style="margin-top:8px">
+                  <div class="dm-item"><span class="dm-k">原因分析</span><span class="dm-v">{{ investProjectProfile.causeAnalysis }}</span></div>
+                  <div class="dm-item"><span class="dm-k">里程碑状态</span><span class="dm-v">{{ investProjectProfile.milestoneStatus }}</span></div>
+                  <div class="dm-item"><span class="dm-k">关联交易金额</span><span class="dm-v">{{ toYiText(investProjectProfile.relatedTradeAmountYi) }} 亿</span></div>
+                  <div class="dm-item"><span class="dm-k">隐蔽关联方</span><span class="dm-v">{{ investProjectProfile.hiddenRelationCount }} 个</span></div>
                 </div>
                 <button class="btn ai-btn" @click="triggerAIAnalysis('investment')" style="margin:6px 0">🤖 AI 综合分析</button>
-                <KnowledgeGraph :graphData="GRAPH_INVESTMENT" :height="240" style="margin-top:10px" />
+                <KnowledgeGraph :graphData="investProjectGraph" :height="240" style="margin-top:10px" />
+                <div class="compact-table-wrap" style="margin-top:10px" v-if="investProjectProfile">
+                  <table class="compact-table">
+                    <thead><tr><th>里程碑</th><th>计划</th><th>实际</th><th>状态</th><th>说明</th></tr></thead>
+                    <tbody>
+                      <tr v-for="item in investProjectProfile.milestones" :key="item.name">
+                        <td>{{ item.name }}</td><td>{{ item.planned }}</td><td>{{ item.actual }}</td><td>{{ milestoneText(item.status) }}</td><td>{{ item.note }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </template>
               <!-- L4: 单据工单 -->
               <template v-if="drillNode?.level === 4">
@@ -263,10 +293,9 @@
                   <table class="compact-table">
                     <thead><tr><th>单据类型</th><th>编号</th><th>状态</th><th>关联工单</th></tr></thead>
                     <tbody>
-                      <tr><td>可行性研究批复</td><td>FK-2024-0188</td><td>已批复</td><td>-</td></tr>
-                      <tr><td>月度投资报告</td><td>YZ-2026-04</td><td>已归档</td><td>WO-2026-0037</td></tr>
-                      <tr><td>核查工单</td><td>WO-2026-0037</td><td>核查中</td><td>WO-2026-0037</td></tr>
-                      <tr><td>预算调整申请</td><td>YS-2026-0012</td><td>待审批</td><td>-</td></tr>
+                      <tr v-for="row in investDocRows" :key="`${row.type}-${row.id}`">
+                        <td>{{ row.type }}</td><td>{{ row.id }}</td><td>{{ row.status }}</td><td>{{ row.workOrderId }}</td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -430,106 +459,270 @@
 
             <!-- ====== 合同穿透 ====== -->
             <template v-if="drillMode.module === 'contract'">
-              <template v-if="drillNode?.level === 0">
-                <h3 class="p-title">合同总览</h3>
-                <div class="funds-mini-row">
-                  <div class="fm-kpi" v-for="ck in contractKPIs" :key="ck.label">
-                    <span class="fmk-label">{{ ck.label }}</span><span class="fmk-val">{{ ck.value }}</span>
+              <section class="contract-center-screen">
+                <div class="contract-topbar glass-panel">
+                  <div class="contract-topbar-left">
+                    <h2 class="contract-screen-title glow-title">{{ contractCenterData.title }}</h2>
+                    <div class="contract-scene-tabs">
+                      <button
+                        v-for="tab in contractCenterData.sceneTabs"
+                        :key="tab"
+                        type="button"
+                        class="contract-scene-tab"
+                        :class="{ active: contractScene === tab }"
+                        @click="contractScene = tab"
+                      >
+                        {{ tab }}
+                      </button>
+                    </div>
+                  </div>
+                  <div class="contract-topbar-right">
+                    <div class="contract-top-info">
+                      <span class="contract-top-label">实时刷新</span>
+                      <strong>{{ contractCurrentTime }}</strong>
+                    </div>
+                    <div class="contract-top-info success">
+                      <span class="contract-top-label">状态</span>
+                      <strong>{{ contractCenterData.refreshText }}</strong>
+                    </div>
                   </div>
                 </div>
-                <div style="display:flex;gap:10px;margin-top:10px">
-                  <EChart class="drill-chart half" :option="contractAmountChart" />
-                  <EChart class="drill-chart half" :option="contractRiskPieChart" />
-                </div>
-              </template>
-              <template v-if="drillNode?.level === 1">
-                <h3 class="p-title">{{ drillNode.label }}</h3>
-                <div class="compact-table-wrap">
-                  <table class="compact-table">
-                    <thead><tr><th>子公司</th><th>合同数</th><th>金额合计(亿)</th><th>高风险</th></tr></thead>
-                    <tbody>
-                      <tr v-for="c in filterCompaniesBySector" :key="c.id">
-                        <td>{{ c.name }}</td>
-                        <td>{{ contractsByCompany(c.id).length }}</td>
-                        <td>{{ contractsTotal(c.id).toFixed(1) }}</td>
-                        <td><RiskBadge :level="c.risk" /></td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </template>
-              <template v-if="drillNode?.level === 2">
-                <h3 class="p-title">{{ drillNode.label }}</h3>
-                <div class="compact-table-wrap">
-                  <table class="compact-table">
-                    <thead><tr><th>合同编号</th><th>名称</th><th>金额(亿)</th><th>乙方</th><th>等级</th><th>履约</th></tr></thead>
-                    <tbody>
-                      <tr v-for="ct in filterContractsByCompany" :key="ct.id">
-                        <td>{{ ct.id }}</td><td>{{ ct.name }}</td><td>{{ ct.amountYi }}</td>
-                        <td>{{ ct.partyB }}</td><td><RiskBadge :level="ct.level" /></td>
-                        <td>
-                          <div class="mini-bar"><div class="mini-fill" :style="{ width: ct.performance + '%', background: ct.performance < 50 ? 'var(--risk-red)' : ct.performance < 70 ? 'var(--risk-orange)' : 'var(--risk-green)' }"></div><span class="mini-pct">{{ ct.performance }}%</span></div>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </template>
-              <template v-if="drillNode?.level === 3">
-                <h3 class="p-title">{{ drillNode.label }}</h3>
-                <div class="detail-meta-row" v-if="contractFullDetail">
-                  <div class="dm-item" v-for="h in contractFullDetail.aiExtraction.keyHighlights" :key="h.label">
-                    <span class="dm-k">{{ h.label }}</span>
-                    <span class="dm-v" :style="{ color: h.risk ? 'var(--risk-orange)' : '' }">{{ h.value }}</span>
+
+                <div class="contract-kpi-grid">
+                  <div
+                    v-for="item in contractCenterData.kpis"
+                    :key="item.label"
+                    class="contract-kpi-card breath-glow"
+                    :class="item.status"
+                  >
+                    <div class="contract-kpi-head">
+                      <span class="contract-kpi-title">{{ item.label }}</span>
+                      <span class="contract-kpi-icon">{{ contractKpiIcon(item.icon) }}</span>
+                    </div>
+                    <div class="contract-kpi-main">
+                      <strong class="contract-kpi-num">{{ displayAnimatedValue(item) }}</strong>
+                      <span class="contract-kpi-unit">{{ item.unit }}</span>
+                    </div>
+                    <svg class="contract-trend-svg" viewBox="0 0 120 32" preserveAspectRatio="none">
+                      <defs>
+                        <linearGradient :id="`trend-${item.label}`" x1="0%" y1="0%" x2="100%" y2="0%">
+                          <stop offset="0%" stop-color="#0ea5e9" />
+                          <stop offset="100%" :stop-color="contractStatusColor(item.status)" />
+                        </linearGradient>
+                      </defs>
+                      <polyline :points="sparklinePoints(item.trend)" :stroke="`url(#trend-${item.label})`" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                    <div class="contract-kpi-status">{{ contractStatusText(item.status) }}</div>
                   </div>
                 </div>
-                <div v-if="contractFullDetail?.riskClauses?.length" style="margin-top:10px">
-                  <h4 class="p-title">⚠ 风险条款分析</h4>
-                  <div v-for="rc in contractFullDetail.riskClauses" :key="rc.clause" class="risk-clause-box">
-                    <div class="rc-head"><RiskBadge :level="rc.risk" /> <strong>{{ rc.clause }}</strong></div>
-                    <div class="rc-body">{{ rc.analysis }}</div>
-                    <div class="rc-sug">💡 {{ rc.suggestion }}</div>
+
+                <div class="contract-main-grid">
+                  <div class="contract-left-column">
+                    <div class="contract-pie-row">
+                      <section class="glass-panel contract-chart-card breath-glow">
+                        <div class="contract-section-head">
+                          <h3 class="contract-section-title glow-title">合同风险等级分布</h3>
+                          <span class="contract-section-sub">hover 查看详情，点击图例筛选下方列表</span>
+                        </div>
+                        <EChart class="contract-chart-host" :option="contractRiskDistributionOption" />
+                        <div class="contract-legend-row">
+                          <button
+                            v-for="item in contractCenterData.riskDistribution"
+                            :key="item.name"
+                            type="button"
+                            class="contract-legend-chip"
+                            :class="{ active: contractRiskFilter === item.name }"
+                            @click="toggleContractRiskFilter(item.name)"
+                          >
+                            <span class="contract-legend-dot" :style="{ background: item.color }"></span>
+                            {{ item.name }} {{ item.value }}%
+                          </button>
+                        </div>
+                      </section>
+                      <section class="glass-panel contract-chart-card breath-glow">
+                        <div class="contract-section-head">
+                          <h3 class="contract-section-title glow-title">合同履约状态分布</h3>
+                          <span class="contract-section-sub">科技风联动筛选</span>
+                        </div>
+                        <EChart class="contract-chart-host" :option="contractStatusDistributionOption" />
+                        <div class="contract-legend-row">
+                          <button
+                            v-for="item in contractCenterData.statusDistribution"
+                            :key="item.name"
+                            type="button"
+                            class="contract-legend-chip"
+                            :class="{ active: contractStatusFilter === item.name }"
+                            @click="toggleContractStatusFilter(item.name)"
+                          >
+                            <span class="contract-legend-dot" :style="{ background: item.color }"></span>
+                            {{ item.name }}
+                          </button>
+                        </div>
+                      </section>
+                    </div>
+
+                    <section class="glass-panel contract-list-card breath-glow">
+                      <div class="contract-section-head">
+                        <h3 class="contract-section-title glow-title">合同主列表</h3>
+                        <span class="contract-section-sub">点击任意行，右侧 AI 面板自动加载详情</span>
+                      </div>
+                      <div class="contract-list-toolbar">
+                        <div class="contract-toolbar-group">
+                          <span class="contract-toolbar-chip">当前场景：{{ contractScene }}</span>
+                          <span class="contract-toolbar-chip">筛选后 {{ contractFilteredList.length }} 份</span>
+                          <span class="contract-toolbar-chip">默认演示：{{ contractCenterData.defaultContractId }}</span>
+                        </div>
+                        <div class="contract-toolbar-group">
+                          <span
+                            v-for="tag in selectedContractTags"
+                            :key="tag"
+                            class="contract-toolbar-chip warn"
+                          >
+                            {{ tag }}
+                          </span>
+                        </div>
+                      </div>
+                      <div class="contract-table-wrap">
+                        <table class="contract-main-table">
+                          <thead>
+                            <tr>
+                              <th>合同编号</th>
+                              <th>合同名称</th>
+                              <th>签约单位</th>
+                              <th>合作方供应商</th>
+                              <th>合同金额（亿元）</th>
+                              <th>签订日期</th>
+                              <th>风险等级</th>
+                              <th>履约状态</th>
+                              <th>操作按钮</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr
+                              v-for="ct in contractFilteredList"
+                              :key="ct.id"
+                              class="contract-main-row float-row"
+                              :class="[contractRiskClass(ct.riskLevel), { active: selectedContractId === ct.id }]"
+                              @click="selectContract(ct.id)"
+                            >
+                              <td><span v-if="ct.riskLevel === 'high'" class="risk-live-dot"></span>{{ ct.id }}</td>
+                              <td>{{ ct.name }}</td>
+                              <td>{{ ct.company }}</td>
+                              <td>{{ ct.supplier }}</td>
+                              <td>{{ ct.amountYi.toFixed(2) }}</td>
+                              <td>{{ ct.signDate }}</td>
+                              <td><span class="risk-chip" :class="contractRiskClass(ct.riskLevel)">{{ contractRiskLabel(ct.riskLevel) }}</span></td>
+                              <td>{{ ct.status }}</td>
+                              <td>
+                                <div class="contract-op-row">
+                                  <button type="button" class="mini-op-btn" @click.stop="selectContract(ct.id)">查看详情</button>
+                                  <button type="button" class="mini-op-btn" @click.stop="focusContractBottom">履约监控</button>
+                                  <button type="button" class="mini-op-btn warning" @click.stop="launchContractWorkOrder">派发工单</button>
+                                </div>
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
                   </div>
+
+                  <aside class="glass-panel contract-ai-panel breath-glow">
+                    <div class="contract-section-head">
+                      <h3 class="contract-section-title glow-title">AI 合同智能解析中心</h3>
+                      <span class="contract-ai-badge">{{ selectedContract?.badge || '自动解析中' }}</span>
+                    </div>
+                    <div class="contract-ai-meta">
+                      <div class="contract-ai-meta-card">
+                        <span class="contract-ai-meta-label">交付进度</span>
+                        <strong>{{ selectedContract?.deliveryProgress ?? 0 }}%</strong>
+                      </div>
+                      <div class="contract-ai-meta-card warning">
+                        <span class="contract-ai-meta-label">付款进度</span>
+                        <strong>{{ selectedContract?.paymentProgress ?? 0 }}%</strong>
+                      </div>
+                      <div class="contract-ai-meta-card">
+                        <span class="contract-ai-meta-label">场景分类</span>
+                        <strong>{{ selectedContract?.scene || contractScene }}</strong>
+                      </div>
+                    </div>
+                    <div class="contract-risk-tags">
+                      <span v-for="tag in selectedContractTags" :key="tag" class="contract-risk-tag">{{ tag }}</span>
+                    </div>
+
+                    <section class="contract-ai-section">
+                      <h4 class="contract-ai-title">合同基础信息卡片</h4>
+                      <div class="contract-info-grid">
+                        <div v-for="item in selectedContractInfoItems" :key="item.label" class="contract-info-item">
+                          <span class="contract-info-label">{{ item.label }}</span>
+                          <strong class="contract-info-value" :class="{ risk: item.risk }">{{ item.value }}</strong>
+                        </div>
+                      </div>
+                    </section>
+
+                    <section class="contract-ai-section">
+                      <h4 class="contract-ai-title">合同原文展示 + AI 风险条款智能标红</h4>
+                      <div class="contract-clause-list">
+                        <div
+                          v-for="(clause, index) in selectedContractClauses"
+                          :key="`${clause.article}-${index}`"
+                          class="contract-clause-item"
+                          :class="{ highlight: clause.risk, active: contractClauseIndex >= index && clause.risk }"
+                        >
+                          <div class="contract-clause-head">
+                            <span class="clause-warning" v-if="clause.risk">▲</span>
+                            <strong>{{ clause.article }}</strong>
+                            <span class="contract-clause-tag" v-if="clause.risk">{{ clause.tag }}</span>
+                          </div>
+                          <div class="contract-clause-text">{{ clause.text }}</div>
+                        </div>
+                      </div>
+                    </section>
+
+                    <section class="contract-ai-section">
+                      <h4 class="contract-ai-title">合规依据 + 风险说明</h4>
+                      <div class="contract-compliance-list">
+                        <div v-for="item in selectedContractCompliance" :key="item.violated" class="contract-compliance-item">
+                          <div class="contract-compliance-head">
+                            <span class="risk-chip high">{{ item.level }}</span>
+                            <strong>{{ item.violated }}</strong>
+                          </div>
+                          <div class="contract-compliance-line"><span>违反条款：</span>{{ item.rule }}</div>
+                          <div class="contract-compliance-line"><span>合规依据：</span>{{ item.basis }}</div>
+                          <div class="contract-compliance-line"><span>整改建议：</span>{{ item.suggestion }}</div>
+                        </div>
+                      </div>
+                    </section>
+
+                    <section class="contract-ai-section">
+                      <h4 class="contract-ai-title">AI 研判结论</h4>
+                      <div class="contract-ai-summary">
+                        <div class="contract-ai-summary-level">风险等级：{{ selectedContractConclusion.level }}</div>
+                        <ol class="contract-ai-summary-list">
+                          <li v-for="item in selectedContractConclusion.summary" :key="item">{{ item }}</li>
+                        </ol>
+                        <div class="contract-ai-advice">{{ selectedContractConclusion.advice }}</div>
+                      </div>
+                    </section>
+
+                    <div class="contract-ai-actions">
+                      <button type="button" class="contract-action-btn" @click="focusContractBottom">查看履约</button>
+                      <button type="button" class="contract-action-btn" @click="pushContractToast('检测到高风险合同，已联动查询关联支付流水')">查看关联支付</button>
+                      <button type="button" class="contract-action-btn" @click="pushContractToast('已定位关联采购项目 CG-2026-0300')">查看采购项目</button>
+                      <button type="button" class="contract-action-btn warning" @click="pushContractToast('检测到高风险合同，已生成预警工单')">发起预警</button>
+                      <button type="button" class="contract-action-btn primary" :class="{ pulse: contractDemoStarted }" @click="launchContractWorkOrder">派发整改工单</button>
+                    </div>
+                  </aside>
                 </div>
-                <button class="btn ai-btn" @click="triggerAIAnalysis('contract')" style="margin:6px 0">🤖 AI 合规审查</button>
-                <KnowledgeGraph :graphData="GRAPH_CONTRACT" :height="180" style="margin-top:10px" />
-              </template>
-              <template v-if="drillNode?.level === 4">
-                <h3 class="p-title">{{ drillNode.label }}</h3>
-                <div v-if="contractFullDetail?.performance" class="perf-section">
-                  <div class="perf-summary-row">
-                    <span>合同总额：¥{{ contractFullDetail.performance.totalContractYi }} 亿</span>
-                    <span style="color:var(--risk-red)">已付款：¥{{ contractFullDetail.performance.totalPaidYi }} 亿 ({{ contractFullDetail.performance.paidPercent }}%)</span>
-                    <span>交付进度：{{ contractFullDetail.performance.deliveryPercent }}%</span>
+
+                <section ref="contractBottomRef" class="glass-panel contract-bottom-panel breath-glow">
+                  <div class="contract-section-head">
+                    <h3 class="contract-section-title glow-title">履约进度对比双轴图</h3>
+                    <span class="contract-section-sub">超进度付款风险 → 已自动预警</span>
                   </div>
-                  <div v-if="contractFullDetail.performance.overpaymentWarning" class="overpay-warn">
-                    ⚠ 超付预警：付款进度（{{ contractFullDetail.performance.paidPercent }}%）超前于交付进度（{{ contractFullDetail.performance.deliveryPercent }}%）！
-                  </div>
-                  <div class="compact-table-wrap" style="margin-top:8px">
-                    <table class="compact-table">
-                      <thead><tr><th>交付项</th><th>计划</th><th>实际</th><th>状态</th></tr></thead>
-                      <tbody>
-                        <tr v-for="d in contractFullDetail.performance.deliverables" :key="d.item">
-                          <td>{{ d.item }}</td><td>{{ d.planned }}</td><td>{{ d.actual }}</td><td>{{ d.done ? '✅' : '⏳' }}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                  <div class="compact-table-wrap" style="margin-top:6px">
-                    <table class="compact-table">
-                      <thead><tr><th>付款阶段</th><th>金额(亿)</th><th>计划</th><th>实际</th></tr></thead>
-                      <tbody>
-                        <tr v-for="p in contractFullDetail.performance.payments" :key="p.phase">
-                          <td>{{ p.phase }}</td><td>{{ p.amountYi }}</td><td>{{ p.planned }}</td><td>{{ p.actual || '-' }}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                  <div style="margin-top:10px;text-align:center" v-if="contractFullDetail.performance.overpaymentWarning">
-                    <button class="btn btn-primary">生成超付预警工单</button>
-                  </div>
-                </div>
-              </template>
+                  <EChart class="contract-bottom-chart" :option="contractPerformanceOption" />
+                </section>
+              </section>
             </template>
 
             <!-- ====== 产权穿透 ====== -->
@@ -1275,14 +1468,15 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, reactive, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import EChart from '@/components/EChart.vue'
 import RiskBadge from '@/components/RiskBadge.vue'
 import KnowledgeGraph from '@/components/KnowledgeGraph.vue'
 import {
   KPI, SECTORS, COMPANIES, RISK_SAMPLES, heatmapCells,
   INVESTMENT_PROJECTS, ACCOUNTS, FUND_FLOWS,
-  CONTRACTS, PROCUREMENT_PACKAGES, CONTRACT_DETAILS,
+  INVESTMENT_PROJECT_PROFILES, INVESTMENT_RELATION_GRAPHS,
+  CONTRACTS, PROCUREMENT_PACKAGES, CONTRACT_DETAILS, CONTRACT_COMMAND_CENTER,
   GRAPH_INVESTMENT, GRAPH_PROCUREMENT, GRAPH_CONTRACT,
   WORK_ORDERS, RECTIFICATION_FLOW, CONTRACT_NLP_STEPS,
   // 新增6大穿透模块数据
@@ -1320,6 +1514,10 @@ const toastQueue = [
   { text: '海外工程公司完工百分比与实际进度偏离', module: 'accounting' },
 ]
 let toastIndex = 0
+let contractClockTimer
+let contractDemoTimer
+let contractClauseTimer
+let contractKpiTimer
 
 function onClickToast() {
   if (toastModule.value) {
@@ -1329,6 +1527,16 @@ function onClickToast() {
 
 // ==================== 日期 ====================
 const todayStr = new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+const contractCenterData = CONTRACT_COMMAND_CENTER
+const contractScene = ref(CONTRACT_COMMAND_CENTER.sceneTabs[0])
+const selectedContractId = ref(CONTRACT_COMMAND_CENTER.defaultContractId)
+const contractRiskFilter = ref('')
+const contractStatusFilter = ref('')
+const contractCurrentTime = ref(formatContractTime())
+const contractDemoStarted = ref(false)
+const contractClauseIndex = ref(-1)
+const contractBottomRef = ref(null)
+const contractAnimatedValues = reactive(Object.fromEntries(CONTRACT_COMMAND_CENTER.kpis.map((item) => [item.label, 0])))
 
 // ==================== Footer Tabs ====================
 const footerTabs = [
@@ -1350,11 +1558,18 @@ const boardInvestChart = computed(() => ({
   backgroundColor: 'transparent',
   grid: { left: 8, right: 8, top: 8, bottom: 20 },
   tooltip: { trigger: 'axis' },
-  xAxis: { type: 'category', data: ['P01', 'P02', 'P03'], axisLabel: { color: '#8ba3c7', fontSize: 10 } },
+  xAxis: { type: 'category', data: investmentBoardChartProjects.value.map((p) => p.id), axisLabel: { color: '#8ba3c7', fontSize: 10 } },
   yAxis: { type: 'value', axisLabel: { color: '#8ba3c7', fontSize: 9 }, splitLine: { lineStyle: { color: 'rgba(59,130,246,0.08)' } } },
   series: [
-    { name: '预算', type: 'bar', data: [12.4, 8.2, 3.5], itemStyle: { color: '#3b82f6' } },
-    { name: '实际', type: 'bar', data: [14.7, 7.8, 3.1], itemStyle: { color: '#ef4444' } },
+    { name: '预算', type: 'bar', data: investmentBoardChartProjects.value.map((p) => p.budgetYi), itemStyle: { color: '#3b82f6' } },
+    {
+      name: '实际',
+      type: 'bar',
+      data: investmentBoardChartProjects.value.map((p) => ({
+        value: p.actualYi,
+        itemStyle: { color: p.actualYi > p.budgetYi ? '#ef4444' : '#22c55e' },
+      })),
+    },
   ],
 }))
 
@@ -1386,20 +1601,50 @@ const boardProcurementChart = computed(() => ({
 }))
 
 // ==================== 合同驾驶舱总览 ====================
-const contractBoardTotal = computed(() => CONTRACTS.length)
-const contractBoardAmount = computed(() => CONTRACTS.reduce((s, c) => s + c.amountYi, 0).toFixed(1))
-const contractBoardHighRisk = computed(() => CONTRACTS.filter(c => c.level === 'high' || c.level === 'critical').length)
-const contractBoardExpiring = computed(() => 3) // 模拟：3 份本月到期
-const contractBoardRiskLevel = computed(() => contractBoardHighRisk.value >= 2 ? 'high' : 'medium')
+const contractBoardTotal = computed(() => contractCenterData.kpis[0].value)
+const contractBoardAmount = computed(() => contractCenterData.kpis[1].value.toFixed(2))
+const contractBoardHighRisk = computed(() => contractCenterData.kpis[2].value)
+const contractBoardExpiring = computed(() => contractCenterData.kpis[4].value)
+const contractBoardRiskLevel = computed(() => 'high')
+
+const investmentProjectDetails = computed(() =>
+  INVESTMENT_PROJECTS.map((p) => ({
+    ...p,
+    ...(INVESTMENT_PROJECT_PROFILES[p.id] || {}),
+  }))
+)
+
+const investmentBoardProjectCount = computed(() => investmentProjectDetails.value.length)
+const investmentBoardBudgetTotal = computed(() => toYiText(investmentProjectDetails.value.reduce((sum, p) => sum + p.budgetYi, 0)))
+const investmentBoardRiskLevel = computed(() => investmentProjectDetails.value.some((p) => p.risk === 'critical') ? 'critical' : 'high')
+const investmentBoardFocusNode = computed(() =>
+  [...investmentProjectDetails.value].sort((a, b) => (b.overBudgetRate || 0) - (a.overBudgetRate || 0))[0] || investmentProjectDetails.value[0]
+)
+const investmentBoardFocusProject = computed(() => ({
+  code: investmentBoardFocusNode.value?.id || 'P06',
+  overBudgetRate: toPercentText(investmentBoardFocusNode.value?.overBudgetRate || 0),
+}))
+const investmentBoardChartProjects = computed(() =>
+  [...investmentProjectDetails.value]
+    .sort((a, b) => (b.overBudgetRate || 0) - (a.overBudgetRate || 0))
+    .slice(0, 4)
+)
+const investmentCockpitKPIs = computed(() => {
+  const totalBudget = investmentProjectDetails.value.reduce((sum, p) => sum + p.budgetYi, 0)
+  const totalActual = investmentProjectDetails.value.reduce((sum, p) => sum + p.actualYi, 0)
+  const overBudgetCount = investmentProjectDetails.value.filter((p) => p.actualYi > p.budgetYi).length
+  const focus = investmentBoardFocusNode.value
+  return [
+    { label: '总投资计划', value: `${toYiText(totalBudget)} 亿` },
+    { label: '已完成投资', value: `${toYiText(totalActual)} 亿` },
+    { label: '项目总数', value: `${investmentProjectDetails.value.length} 个` },
+    { label: '超预算项目', value: `${overBudgetCount} 个`, warn: overBudgetCount > 0 },
+    { label: '重点预警项目', value: focus ? `${focus.name}` : '-' },
+    { label: '重点偏差', value: focus ? signedPercentText(focus.overBudgetRate || 0) : '-', warn: !!focus && (focus.overBudgetRate || 0) > 0 },
+  ]
+})
 
 const boardContractOverviewChart = computed(() => {
-  const dist = { '重大风险': 0, '高风险': 0, '中风险': 0, '低风险': 0 }
-  CONTRACTS.forEach(c => {
-    if (c.level === 'critical') dist['重大风险']++
-    else if (c.level === 'high') dist['高风险']++
-    else if (c.level === 'medium') dist['中风险']++
-    else dist['低风险']++
-  })
   return {
     backgroundColor: 'transparent',
     tooltip: { trigger: 'item' },
@@ -1407,9 +1652,9 @@ const boardContractOverviewChart = computed(() => {
       type: 'pie', radius: ['40%', '68%'], center: ['50%', '50%'],
       label: { show: false },
       emphasis: { label: { show: true, fontSize: 11, color: '#e8f1ff' } },
-      data: Object.entries(dist).filter(([, v]) => v > 0).map(([n, v]) => ({ name: n, value: v })),
+      data: contractCenterData.riskDistribution.map((item) => ({ name: item.name, value: item.value })),
       itemStyle: { borderColor: '#040d1a', borderWidth: 2 },
-      color: ['#ef4444', '#f97316', '#eab308', '#22c55e'],
+      color: contractCenterData.riskDistribution.map((item) => item.color),
     }],
   }
 })
@@ -1942,19 +2187,20 @@ const quickEntries = [
 const moduleTrees = {
   investment: [
     { id: 'root', label: '集团投资总览', level: 0, icon: '🏢' },
-    { id: 's1', label: '电力能源板块', level: 1, parentId: 'root', risk: 'medium' },
+    { id: 's1', label: '电力能源板块', level: 1, parentId: 'root', risk: 'critical' },
     { id: 's3', label: '工程建设板块', level: 1, parentId: 'root', risk: 'high' },
     { id: 's2', label: '装备制造板块', level: 1, parentId: 'root', risk: 'low' },
     { id: 'c1', label: '华东电力有限公司', level: 2, parentId: 's1', risk: 'high' },
-    { id: 'c2', label: '西北新能源投资公司', level: 2, parentId: 's1', risk: 'medium' },
+    { id: 'c2', label: '西北新能源投资公司', level: 2, parentId: 's1', risk: 'critical' },
     { id: 'c4', label: '海外工程总承包公司', level: 2, parentId: 's3', risk: 'critical' },
     { id: 'c5', label: '城市基建投资公司', level: 2, parentId: 's3', risk: 'high' },
     { id: 'c3', label: '重型装备集团', level: 2, parentId: 's2', risk: 'low' },
+    { id: 'P06', label: '陇东风电基地二期', level: 3, parentId: 'c2', risk: 'critical' },
     { id: 'P01', label: '东南亚某国路桥PPP', level: 3, parentId: 'c4', risk: 'critical' },
     { id: 'P02', label: '风光储一体化基地', level: 3, parentId: 'c2', risk: 'low' },
     { id: 'P03', label: '煤电灵活性改造', level: 3, parentId: 'c1', risk: 'low' },
     { id: 'P04', label: '片区综合开发', level: 3, parentId: 'c5', risk: 'high' },
-    { id: 'docs_invest', label: '单据·凭证·工单', level: 4, parentId: 'P01' },
+    { id: 'docs_invest', label: '单据·凭证·工单', level: 4, parentId: 'P06' },
   ],
   funds: [
     { id: 'root', label: '集团资金总览', level: 0, icon: '💰' },
@@ -2133,6 +2379,7 @@ function goScene(r) {
   enterDrill(mod)
   nextTick(() => {
     if (r.scene === 'investment' && r.id === 'R01') drillToLevel(3, 'P01', '东南亚某国路桥PPP')
+    if (r.scene === 'investment' && r.id === 'R11') drillToLevel(3, 'P06', '陇东风电基地二期')
     if (r.scene === 'funds' && r.id === 'R02') drillToLevel(4, 'v1', '凭证·流水明细')
     if (r.scene === 'procurement' && r.id === 'R06') drillToLevel(3, 'PKG1', 'CG-2026-0501')
     if (r.scene === 'contract' && r.id === 'R05') drillToLevel(3, 'CT0312', 'CT-2026-0312')
@@ -2151,7 +2398,7 @@ const filterCompaniesBySector = computed(() => {
 })
 const filterProjectsByCompany = computed(() => {
   if (!drillNode.value || drillNode.value.level !== 2) return []
-  return INVESTMENT_PROJECTS.filter((p) => p.companyId === drillNode.value.id)
+  return investmentProjectDetails.value.filter((p) => p.companyId === drillNode.value.id)
 })
 const filterAccountsByCompany = computed(() => {
   if (!drillNode.value || drillNode.value.level !== 2) return []
@@ -2186,26 +2433,505 @@ const contractFullDetail = computed(() => {
   return ctId ? (CONTRACT_DETAILS[ctId] || null) : null
 })
 
+const contractCenterContracts = computed(() => contractCenterData.contracts)
+
+const selectedContract = computed(() =>
+  contractCenterContracts.value.find((item) => item.id === selectedContractId.value) || contractCenterContracts.value[0]
+)
+
+const selectedContractDetail = computed(() => {
+  const direct = contractCenterData.contractDetails[selectedContractId.value]
+  if (direct) return direct
+  const basic = selectedContract.value
+  if (!basic) return { basicInfo: {}, clauses: [], compliance: [], conclusion: { level: '关注', summary: [], advice: '' } }
+  return {
+    basicInfo: {
+      name: basic.name,
+      id: basic.id,
+      amount: `${basic.amountYi.toFixed(2)} 亿元`,
+      supplier: basic.supplier,
+      signDate: basic.signDate,
+      cycle: basic.cycle,
+      paymentMethod: basic.paymentMethod,
+      warranty: basic.warrantyStatus,
+      legalReview: basic.legalReview,
+    },
+    clauses: [
+      { article: '第一条 合同概述', text: `${basic.name}，签约主体 ${basic.company}，合作方 ${basic.supplier}。`, risk: false, tag: '' },
+      { article: '第二条 付款方式', text: basic.paymentMethod, risk: basic.paymentMethod.includes('100%') || basic.paymentMethod.includes('预付'), tag: '关注' },
+      { article: '第三条 质保约定', text: basic.warrantyStatus, risk: basic.warrantyStatus.includes('未设置'), tag: '关注' },
+    ],
+    compliance: [
+      {
+        level: contractRiskLabel(basic.riskLevel),
+        violated: '履约风险扫描',
+        rule: '参照集团合同管理标准库自动比对',
+        basis: `${basic.status}，交付进度 ${basic.deliveryProgress}% ，付款进度 ${basic.paymentProgress}%。`,
+        suggestion: '建议继续跟踪供应商履约和付款匹配情况。',
+      },
+    ],
+    conclusion: {
+      level: contractRiskLabel(basic.riskLevel),
+      summary: [
+        `${basic.name} 当前履约状态为 ${basic.status}。`,
+        `付款进度 ${basic.paymentProgress}% ，交付进度 ${basic.deliveryProgress}% 。`,
+      ],
+      advice: '建议持续关注履约进度与付款节奏。',
+    },
+  }
+})
+
+const selectedContractInfoItems = computed(() => {
+  const info = selectedContractDetail.value.basicInfo || {}
+  return [
+    { label: '合同名称', value: info.name },
+    { label: '合同编号', value: info.id },
+    { label: '合同金额', value: info.amount },
+    { label: '供应商', value: info.supplier },
+    { label: '签订日期', value: info.signDate },
+    { label: '履约周期', value: info.cycle },
+    { label: '付款方式', value: info.paymentMethod, risk: String(info.paymentMethod || '').includes('100%') },
+    { label: '质保金状态', value: info.warranty, risk: String(info.warranty || '').includes('未设置') },
+    { label: '法务审核状态', value: info.legalReview, risk: String(info.legalReview || '').includes('未') },
+  ]
+})
+
+const selectedContractClauses = computed(() => selectedContractDetail.value.clauses || [])
+const selectedContractCompliance = computed(() => selectedContractDetail.value.compliance || [])
+const selectedContractConclusion = computed(() => selectedContractDetail.value.conclusion || { level: '关注', summary: [], advice: '' })
+const selectedContractTags = computed(() => selectedContract.value?.abnormal?.length ? selectedContract.value.abnormal : ['条款完整', '履约正常'])
+
+const contractFilteredList = computed(() => contractCenterContracts.value.filter((item) => {
+  const sceneMatched = !contractScene.value || item.scene === contractScene.value
+  const riskMatched = !contractRiskFilter.value || contractRiskLabel(item.riskLevel) === contractRiskFilter.value
+  const statusMatched = !contractStatusFilter.value || item.status === contractStatusFilter.value
+  return sceneMatched && riskMatched && statusMatched
+}))
+
+const contractRiskDistributionOption = computed(() => ({
+  backgroundColor: 'transparent',
+  animationDuration: 1200,
+  tooltip: { trigger: 'item' },
+  legend: { show: false },
+  series: [{
+    type: 'pie',
+    radius: ['48%', '72%'],
+    center: ['50%', '48%'],
+    selectedMode: 'single',
+    itemStyle: {
+      borderWidth: 2,
+      borderColor: 'rgba(4, 13, 26, 0.8)',
+      shadowBlur: 18,
+      shadowColor: 'rgba(14, 165, 233, 0.35)',
+    },
+    label: { color: '#d9f7ff', formatter: '{b}\n{d}%', fontSize: 11 },
+    emphasis: { scale: true, scaleSize: 10, itemStyle: { shadowBlur: 28, shadowColor: 'rgba(6, 182, 212, 0.55)' } },
+    data: contractCenterData.riskDistribution.map((item) => ({
+      name: item.name,
+      value: item.value,
+      selected: contractRiskFilter.value === item.name,
+      itemStyle: { color: item.color },
+    })),
+  }],
+}))
+
+const contractStatusDistributionOption = computed(() => ({
+  backgroundColor: 'transparent',
+  animationDuration: 1200,
+  tooltip: { trigger: 'item' },
+  legend: { show: false },
+  series: [{
+    type: 'pie',
+    radius: ['42%', '68%'],
+    center: ['50%', '48%'],
+    roseType: 'radius',
+    itemStyle: {
+      borderWidth: 2,
+      borderColor: 'rgba(4, 13, 26, 0.8)',
+      shadowBlur: 16,
+      shadowColor: 'rgba(14, 165, 233, 0.28)',
+    },
+    label: { color: '#d9f7ff', formatter: '{b}', fontSize: 10 },
+    emphasis: { scale: true, scaleSize: 9, itemStyle: { shadowBlur: 24, shadowColor: 'rgba(6, 182, 212, 0.52)' } },
+    data: contractCenterData.statusDistribution.map((item) => ({
+      name: item.name,
+      value: item.value,
+      selected: contractStatusFilter.value === item.name,
+      itemStyle: { color: item.color },
+    })),
+  }],
+}))
+
+const contractPerformanceOption = computed(() => ({
+  backgroundColor: 'transparent',
+  animationDuration: 1400,
+  tooltip: { trigger: 'axis' },
+  legend: {
+    data: ['交付进度', '付款进度', '累计付款金额'],
+    top: 0,
+    textStyle: { color: '#d8f5ff', fontSize: 11 },
+  },
+  grid: { left: 54, right: 54, top: 42, bottom: 40 },
+  xAxis: {
+    type: 'category',
+    data: contractCenterData.progressNodes,
+    axisLabel: { color: '#9fc6df', fontSize: 10 },
+    axisLine: { lineStyle: { color: 'rgba(110, 208, 255, 0.28)' } },
+  },
+  yAxis: [
+    {
+      type: 'value',
+      min: 0,
+      max: 100,
+      name: '进度%',
+      axisLabel: { color: '#9fc6df', formatter: '{value}%' },
+      splitLine: { lineStyle: { color: 'rgba(14, 165, 233, 0.1)' } },
+    },
+    {
+      type: 'value',
+      min: 0,
+      max: 2.5,
+      name: '亿元',
+      axisLabel: { color: '#9fc6df' },
+      splitLine: { show: false },
+    },
+  ],
+  series: [
+    {
+      name: '交付进度',
+      type: 'line',
+      smooth: true,
+      symbolSize: 10,
+      yAxisIndex: 0,
+      data: contractCenterData.progressDelivery,
+      lineStyle: { width: 3, color: '#0ea5e9' },
+      itemStyle: { color: '#06b6d4', shadowBlur: 12, shadowColor: 'rgba(14, 165, 233, 0.8)' },
+      areaStyle: { color: 'rgba(14, 165, 233, 0.18)' },
+      label: { show: true, color: '#dff8ff', formatter: '{c}%' },
+    },
+    {
+      name: '付款进度',
+      type: 'line',
+      smooth: true,
+      symbolSize: 10,
+      yAxisIndex: 0,
+      data: contractCenterData.progressPayment,
+      lineStyle: { width: 3, color: '#ff8800' },
+      itemStyle: { color: '#facc16', shadowBlur: 12, shadowColor: 'rgba(255, 136, 0, 0.72)' },
+      areaStyle: { color: 'rgba(255, 136, 0, 0.16)' },
+      label: { show: true, color: '#fff2c2', formatter: '{c}%' },
+      markArea: {
+        silent: true,
+        itemStyle: { color: 'rgba(245, 63, 63, 0.14)' },
+        data: [[{ xAxis: '预付款' }, { xAxis: '最终验收' }]],
+      },
+      markPoint: {
+        symbolSize: 56,
+        data: [{ coord: ['安装调试', 100], value: '预警', itemStyle: { color: '#f53f3f' } }],
+        label: { color: '#fff', formatter: '预警' },
+      },
+    },
+    {
+      name: '累计付款金额',
+      type: 'bar',
+      yAxisIndex: 1,
+      barWidth: 14,
+      data: contractCenterData.progressAmountYi.map((value) => ({
+        value,
+        itemStyle: { color: value >= 2.3 ? '#f53f3f' : '#0ea5e9', borderRadius: [8, 8, 0, 0] },
+      })),
+    },
+  ],
+  graphic: [
+    {
+      type: 'text',
+      right: 32,
+      top: 18,
+      style: {
+        text: '超进度付款风险 -> 已自动预警',
+        fill: '#fda4af',
+        font: 'bold 14px sans-serif',
+        shadowBlur: 12,
+        shadowColor: 'rgba(245, 63, 63, 0.85)',
+      },
+    },
+  ],
+}))
+
+const activeInvestmentProjectId = computed(() => {
+  if (drillMode.value?.module !== 'investment' || !drillNode.value) return 'P06'
+  if (drillNode.value.level === 3) return drillNode.value.id
+  if (drillNode.value.level === 4) {
+    const latestProject = [...drillPath.value].reverse().find((item) => item.level === 3)
+    return latestProject?.id || 'P06'
+  }
+  return 'P06'
+})
+
+const investProjectDetail = computed(() =>
+  INVESTMENT_PROJECTS.find((p) => p.id === activeInvestmentProjectId.value) || INVESTMENT_PROJECTS[0]
+)
+
+const investProjectProfile = computed(() =>
+  INVESTMENT_PROJECT_PROFILES[activeInvestmentProjectId.value] || {}
+)
+
+const investProjectGraph = computed(() =>
+  INVESTMENT_RELATION_GRAPHS[activeInvestmentProjectId.value] || GRAPH_INVESTMENT
+)
+
+const investmentProjectRiskLevel = computed(() => {
+  const profile = investProjectProfile.value
+  if (!profile || !Object.keys(profile).length) return 'low'
+  let score = 0
+  if ((profile.relatedTradeRatio || 0) >= 30) score += 3
+  else if ((profile.relatedTradeRatio || 0) >= 15) score += 2
+  else if ((profile.relatedTradeRatio || 0) >= 8) score += 1
+  if ((profile.hiddenRelationCount || 0) >= 3) score += 3
+  else if ((profile.hiddenRelationCount || 0) >= 1) score += 2
+  if ((profile.overBudgetRate || 0) >= 10) score += 1
+  if (score >= 6) return 'critical'
+  if (score >= 4) return 'high'
+  if (score >= 2) return 'medium'
+  return 'low'
+})
+
+const investmentProjectRiskText = computed(() => {
+  const map = { critical: '重大关联风险', high: '高关联风险', medium: '中关联风险', low: '低关联风险' }
+  return map[investmentProjectRiskLevel.value] || '低关联风险'
+})
+
+const investDocRows = computed(() => {
+  const project = investProjectDetail.value
+  const profile = investProjectProfile.value || {}
+  const alertRows = (profile.alerts || []).map((alert) => {
+    const workOrder = WORK_ORDERS.find((item) => item.id === alert.workOrderId)
+    return {
+      type: '核查工单',
+      id: alert.workOrderId || '待生成',
+      status: workOrder?.status || '待派单',
+      workOrderId: alert.workOrderId || '-',
+    }
+  })
+  return [
+    { type: '可行性研究批复', id: 'FK-2024-0188', status: '已批复', workOrderId: '-' },
+    { type: '月度投资报告', id: 'YZ-2026-04', status: '已归档', workOrderId: alertRows[0]?.workOrderId || '-' },
+    { type: '关联交易台账', id: 'RT-2026-INV', status: `${toPercentText(profile.relatedTradeRatio || 0)} 占比`, workOrderId: alertRows[1]?.workOrderId || alertRows[0]?.workOrderId || '-' },
+    { type: '预算调整申请', id: project.actualYi > project.budgetYi ? 'YS-2026-0012' : '未触发', status: project.actualYi > project.budgetYi ? '待审批' : '正常', workOrderId: '-' },
+    ...alertRows,
+  ]
+})
+
 // ==================== 投资穿透图表 ====================
 const investOverviewChart = computed(() => ({
   backgroundColor: 'transparent',
   tooltip: { trigger: 'axis' },
   legend: { data: ['预算(亿)', '实际(亿)'], textStyle: { color: '#8ba3c7', fontSize: 10 } },
   grid: { left: 44, right: 16, top: 32, bottom: 28 },
-  xAxis: { type: 'category', data: INVESTMENT_PROJECTS.map((p) => p.name.length > 6 ? p.name.slice(0, 6) + '..' : p.name), axisLabel: { color: '#8ba3c7', fontSize: 10, rotate: 20 } },
+  xAxis: { type: 'category', data: investmentProjectDetails.value.map((p) => p.name.length > 6 ? p.name.slice(0, 6) + '..' : p.name), axisLabel: { color: '#8ba3c7', fontSize: 10, rotate: 20 } },
   yAxis: { type: 'value', axisLabel: { color: '#8ba3c7', fontSize: 10 }, splitLine: { lineStyle: { color: 'rgba(0,229,255,0.08)' } } },
   series: [
-    { name: '预算(亿)', type: 'bar', data: INVESTMENT_PROJECTS.map((p) => p.budgetYi), itemStyle: { color: '#60a5fa', borderRadius: [3, 3, 0, 0] } },
-    { name: '实际(亿)', type: 'bar', data: INVESTMENT_PROJECTS.map((p) => p.actualYi), itemStyle: { color: '#ef4444', borderRadius: [3, 3, 0, 0] } },
+    { name: '预算(亿)', type: 'bar', data: investmentProjectDetails.value.map((p) => p.budgetYi), itemStyle: { color: '#60a5fa', borderRadius: [3, 3, 0, 0] } },
+    {
+      name: '实际(亿)',
+      type: 'bar',
+      data: investmentProjectDetails.value.map((p) => ({
+        value: p.actualYi,
+        itemStyle: { color: p.actualYi > p.budgetYi ? '#ef4444' : '#22c55e', borderRadius: [3, 3, 0, 0] },
+      })),
+    },
   ],
 }))
 
 const investSectorSummary = computed(() => SECTORS.map((s) => {
-  const projs = INVESTMENT_PROJECTS.filter((p) => p.sectorId === s.id)
+  const projs = investmentProjectDetails.value.filter((p) => p.sectorId === s.id)
   const totalB = projs.reduce((sum, p) => sum + p.budgetYi, 0)
   const totalA = projs.reduce((sum, p) => sum + p.actualYi, 0)
-  return { name: s.name, count: projs.length, totalBudget: totalB.toFixed(1), totalActual: totalA.toFixed(1), risk: projs.some((p) => p.risk === 'critical') ? 'critical' : projs.some((p) => p.risk === 'high') ? 'high' : 'low' }
+  const progress = projs.length ? Math.round(projs.reduce((sum, p) => sum + (p.progress || 0), 0) / projs.length) : 0
+  const overBudgetCount = projs.filter((p) => p.actualYi > p.budgetYi).length
+  return {
+    name: s.name,
+    count: projs.length,
+    progress,
+    totalBudget: totalB.toFixed(1),
+    totalActual: totalA.toFixed(1),
+    overBudgetCount,
+    risk: projs.some((p) => p.risk === 'critical') ? 'critical' : projs.some((p) => p.risk === 'high') ? 'high' : 'low',
+  }
 }))
+
+function toYiText(value) {
+  return Number(value || 0).toFixed(1).replace(/\.0$/, '')
+}
+
+function toPercentText(value) {
+  return `${Number(value || 0).toFixed(1).replace(/\.0$/, '')}%`
+}
+
+function signedPercentText(value) {
+  const num = Number(value || 0)
+  return `${num > 0 ? '+' : ''}${toPercentText(num)}`
+}
+
+function milestoneText(status) {
+  if (status === 'done') return '已完成'
+  if (status === 'delay') return '延期'
+  return '进行中'
+}
+
+function formatContractTime() {
+  return new Date().toLocaleString('zh-CN', {
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+}
+
+function contractStatusColor(status) {
+  return {
+    high: '#f53f3f',
+    medium: '#ff8800',
+    watch: '#facc16',
+    normal: '#22c55e',
+  }[status] || '#0ea5e9'
+}
+
+function contractStatusText(status) {
+  return {
+    high: '红色预警',
+    medium: '橙色预警',
+    watch: '重点关注',
+    normal: '运行正常',
+  }[status] || '实时监控'
+}
+
+function contractKpiIcon(icon) {
+  return {
+    file: '▦',
+    amount: '◈',
+    risk: '▲',
+    legal: '◎',
+    delay: '◌',
+    new: '✦',
+  }[icon] || '◦'
+}
+
+function contractRiskLabel(level) {
+  return {
+    high: '高风险',
+    medium: '中风险',
+    watch: '关注',
+    normal: '正常',
+    critical: '高风险',
+  }[level] || '关注'
+}
+
+function contractRiskClass(level) {
+  return {
+    high: 'high',
+    critical: 'high',
+    medium: 'medium',
+    watch: 'watch',
+    normal: 'normal',
+  }[level] || 'watch'
+}
+
+function sparklinePoints(values) {
+  if (!values?.length) return ''
+  const max = Math.max(...values)
+  const min = Math.min(...values)
+  return values.map((value, index) => {
+    const x = (index / Math.max(values.length - 1, 1)) * 120
+    const y = max === min ? 16 : 28 - ((value - min) / (max - min)) * 24
+    return `${x},${y}`
+  }).join(' ')
+}
+
+function displayAnimatedValue(item) {
+  const current = contractAnimatedValues[item.label] ?? item.value
+  return typeof item.value === 'number' && !Number.isInteger(item.value) ? current.toFixed(2) : Math.round(current)
+}
+
+function toggleContractRiskFilter(name) {
+  contractRiskFilter.value = contractRiskFilter.value === name ? '' : name
+}
+
+function toggleContractStatusFilter(name) {
+  contractStatusFilter.value = contractStatusFilter.value === name ? '' : name
+}
+
+function selectContract(id) {
+  selectedContractId.value = id
+  contractClauseIndex.value = -1
+  if (contractDemoStarted.value) {
+    window.clearInterval(contractClauseTimer)
+    contractClauseTimer = window.setInterval(() => {
+      if (contractClauseIndex.value >= selectedContractClauses.value.length - 1) {
+        window.clearInterval(contractClauseTimer)
+        return
+      }
+      contractClauseIndex.value += 1
+    }, 650)
+  }
+}
+
+function focusContractBottom() {
+  contractBottomRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function pushContractToast(message) {
+  toastText.value = message
+  toastShow.value = true
+  toastModule.value = 'contract'
+}
+
+function launchContractWorkOrder() {
+  pushContractToast('检测到高风险合同，已生成预警工单')
+}
+
+function animateContractKPIs() {
+  contractCenterData.kpis.forEach((item) => { contractAnimatedValues[item.label] = 0 })
+  let step = 0
+  window.clearInterval(contractKpiTimer)
+  contractKpiTimer = window.setInterval(() => {
+    step += 1
+    const progress = Math.min(step / 18, 1)
+    contractCenterData.kpis.forEach((item) => {
+      contractAnimatedValues[item.label] = item.value * progress
+    })
+    if (progress >= 1) window.clearInterval(contractKpiTimer)
+  }, 60)
+}
+
+function stopContractDemo() {
+  window.clearInterval(contractClockTimer)
+  window.clearTimeout(contractDemoTimer)
+  window.clearInterval(contractClauseTimer)
+  window.clearInterval(contractKpiTimer)
+  contractDemoStarted.value = false
+}
+
+function startContractDemo() {
+  stopContractDemo()
+  contractCurrentTime.value = formatContractTime()
+  contractClockTimer = window.setInterval(() => {
+    contractCurrentTime.value = formatContractTime()
+  }, 1000)
+  animateContractKPIs()
+  selectedContractId.value = contractCenterData.defaultContractId
+  contractRiskFilter.value = ''
+  contractStatusFilter.value = ''
+  contractClauseIndex.value = -1
+  contractDemoTimer = window.setTimeout(() => {
+    contractDemoStarted.value = true
+    selectContract(contractCenterData.defaultContractId)
+    pushContractToast('检测到高风险合同，已生成预警工单')
+  }, 2000)
+}
 
 // ==================== 资金穿透图表 ====================
 const fundsPoolKPIs = computed(() => {
@@ -2465,6 +3191,18 @@ const accountingScoreChart = computed(() => ({
 
 // ==================== 定时器 ====================
 let toastTimer
+watch(() => drillMode.value?.module, (module) => {
+  if (module === 'contract') startContractDemo()
+  else stopContractDemo()
+})
+
+watch(contractFilteredList, (list) => {
+  if (!list.length) return
+  if (!list.some((item) => item.id === selectedContractId.value)) {
+    selectedContractId.value = list[0].id
+  }
+})
+
 onMounted(() => {
   toastTimer = setInterval(() => {
     toastShow.value = true
@@ -2473,8 +3211,12 @@ onMounted(() => {
     toastText.value = item.text
     toastModule.value = item.module
   }, 14000)
+  contractCurrentTime.value = formatContractTime()
 })
-onUnmounted(() => { clearInterval(toastTimer) })
+onUnmounted(() => {
+  clearInterval(toastTimer)
+  stopContractDemo()
+})
 </script>
 
 <style scoped>
@@ -3118,4 +3860,667 @@ onUnmounted(() => { clearInterval(toastTimer) })
 .drill-detail-content { overflow-y: auto; scrollbar-width: thin; padding: 16px 20px; }
 .ai-btn { background: linear-gradient(135deg, rgba(59,130,246,0.2), rgba(139,92,246,0.15)); border: 1px solid rgba(59,130,246,0.3); color: #93c5fd; }
 .ai-btn:hover { background: linear-gradient(135deg, rgba(59,130,246,0.3), rgba(139,92,246,0.25)); color: #e8f1ff; }
+
+/* ==================== CONTRACT CENTER ==================== */
+.contract-center-screen {
+  min-height: calc(100vh - 120px);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  color: #e6f7ff;
+  font-family: "Source Han Sans SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  overflow: visible;
+}
+.glass-panel {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, rgba(8, 23, 42, 0.88), rgba(4, 12, 24, 0.74));
+  border: 1px solid rgba(14, 165, 233, 0.22);
+  border-radius: 18px;
+  box-shadow: 0 0 0 1px rgba(6, 182, 212, 0.08) inset, 0 18px 48px rgba(2, 12, 27, 0.45);
+  backdrop-filter: blur(14px);
+}
+.glass-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(115deg, transparent 0%, rgba(255, 255, 255, 0.04) 16%, transparent 34%, transparent 100%);
+  transform: translateX(-120%);
+  animation: panelSweep 7.5s linear infinite;
+  pointer-events: none;
+}
+.breath-glow {
+  animation: panelBreath 3.4s ease-in-out infinite;
+}
+.float-row {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+.float-row:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 22px rgba(4, 18, 38, 0.38);
+}
+.glow-title {
+  text-shadow: 0 0 10px rgba(14, 165, 233, 0.36), 0 0 18px rgba(6, 182, 212, 0.22);
+}
+.contract-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 22px;
+}
+.contract-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.contract-screen-title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+.contract-scene-tabs {
+  display: flex;
+  gap: 10px;
+}
+.contract-scene-tab {
+  border: 1px solid rgba(14, 165, 233, 0.24);
+  background: rgba(10, 34, 58, 0.6);
+  color: #8edcff;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.contract-scene-tab.active,
+.contract-scene-tab:hover {
+  color: #fff;
+  border-color: rgba(6, 182, 212, 0.58);
+  box-shadow: 0 0 14px rgba(6, 182, 212, 0.24);
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.34), rgba(6, 182, 212, 0.2));
+}
+.contract-topbar-right {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.contract-top-info {
+  min-width: 190px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(10, 34, 58, 0.54);
+  border: 1px solid rgba(14, 165, 233, 0.18);
+}
+.contract-top-info.success {
+  border-color: rgba(34, 197, 94, 0.28);
+}
+.contract-top-label {
+  display: block;
+  font-size: 11px;
+  color: #83b8cf;
+  margin-bottom: 4px;
+}
+.contract-top-info strong {
+  font-size: 14px;
+  color: #f5fbff;
+}
+.contract-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 14px;
+}
+.contract-kpi-card {
+  position: relative;
+  padding: 16px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(7, 29, 51, 0.92), rgba(5, 19, 35, 0.84));
+  border: 1px solid rgba(14, 165, 233, 0.22);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 12px 28px rgba(2, 10, 24, 0.38);
+}
+.contract-kpi-card::after {
+  content: '';
+  position: absolute;
+  left: -30%;
+  right: -30%;
+  bottom: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+  animation: sweepLine 3.8s linear infinite;
+}
+.contract-kpi-card.high { border-color: rgba(245, 63, 63, 0.42); box-shadow: 0 0 18px rgba(245, 63, 63, 0.16); }
+.contract-kpi-card.medium { border-color: rgba(255, 136, 0, 0.38); }
+.contract-kpi-card.watch { border-color: rgba(250, 204, 22, 0.36); }
+.contract-kpi-card.normal { border-color: rgba(6, 182, 212, 0.28); }
+.contract-kpi-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.contract-kpi-title {
+  font-size: 12px;
+  color: #9ad9f0;
+}
+.contract-kpi-icon {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.06);
+  font-size: 15px;
+}
+.contract-kpi-main {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.contract-kpi-num {
+  font-size: 32px;
+  font-weight: 900;
+  line-height: 1;
+  color: #ffffff;
+  text-shadow: 0 0 16px rgba(14, 165, 233, 0.34);
+}
+.contract-kpi-unit {
+  font-size: 12px;
+  color: #8ec9e1;
+}
+.contract-trend-svg {
+  width: 100%;
+  height: 34px;
+  margin-top: 10px;
+  opacity: 0.96;
+}
+.contract-kpi-status {
+  margin-top: 8px;
+  font-size: 11px;
+  color: #8cc5d9;
+}
+.contract-main-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(360px, 0.9fr);
+  gap: 16px;
+  align-items: stretch;
+  min-height: 0;
+}
+.contract-left-column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  min-height: 0;
+}
+.contract-pie-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.contract-chart-card,
+.contract-list-card,
+.contract-ai-panel,
+.contract-bottom-panel {
+  padding: 16px 18px;
+}
+.contract-chart-card,
+.contract-list-card {
+  min-width: 0;
+}
+.contract-chart-host {
+  height: 270px;
+}
+.contract-bottom-chart {
+  height: 330px;
+}
+.contract-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.contract-section-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.contract-section-sub {
+  font-size: 12px;
+  color: #83b8cf;
+}
+.contract-legend-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.contract-legend-chip {
+  border: 1px solid rgba(14, 165, 233, 0.18);
+  background: rgba(7, 24, 41, 0.72);
+  color: #d9f7ff;
+  border-radius: 999px;
+  padding: 7px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.contract-legend-chip.active,
+.contract-legend-chip:hover {
+  transform: translateY(-1px) scale(1.02);
+  border-color: rgba(6, 182, 212, 0.45);
+  box-shadow: 0 0 14px rgba(6, 182, 212, 0.2);
+}
+.contract-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: 0 0 12px currentColor;
+}
+.contract-list-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.contract-list-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.contract-toolbar-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.contract-toolbar-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: #d7f6ff;
+  background: rgba(10, 34, 58, 0.62);
+  border: 1px solid rgba(14, 165, 233, 0.16);
+}
+.contract-toolbar-chip.warn {
+  border-color: rgba(245, 63, 63, 0.24);
+  color: #ffd7d7;
+  background: rgba(62, 15, 21, 0.38);
+}
+.contract-table-wrap {
+  overflow: auto;
+  flex: 1;
+  min-height: 360px;
+  max-height: 560px;
+  border-radius: 16px;
+  border: 1px solid rgba(14, 165, 233, 0.14);
+}
+.contract-main-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+}
+.contract-main-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: center;
+  padding: 12px 10px;
+  background: linear-gradient(180deg, rgba(14, 165, 233, 0.28), rgba(6, 182, 212, 0.16));
+  color: #ebfbff;
+  font-weight: 700;
+}
+.contract-main-table tbody tr {
+  cursor: pointer;
+}
+.contract-main-table tbody tr:nth-child(odd) {
+  background: rgba(255,255,255,0.025);
+}
+.contract-main-table tbody tr:nth-child(even) {
+  background: rgba(4, 18, 38, 0.3);
+}
+.contract-main-table td {
+  padding: 12px 10px;
+  text-align: center;
+  color: #d4edf8;
+  border-bottom: 1px solid rgba(14, 165, 233, 0.08);
+}
+.contract-main-row.active {
+  background: rgba(14, 165, 233, 0.12) !important;
+  box-shadow: inset 0 0 0 1px rgba(14, 165, 233, 0.25);
+}
+.contract-main-row.high {
+  background: linear-gradient(90deg, rgba(245, 63, 63, 0.16), rgba(245, 63, 63, 0.06)) !important;
+}
+.contract-main-row.medium {
+  background: linear-gradient(90deg, rgba(255, 136, 0, 0.12), rgba(255, 136, 0, 0.04)) !important;
+}
+.risk-live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #f53f3f;
+  box-shadow: 0 0 12px rgba(245, 63, 63, 0.95);
+  animation: riskBlink 1s ease-in-out infinite;
+}
+.risk-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 64px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+  color: #fff;
+}
+.risk-chip.high { background: linear-gradient(135deg, #f53f3f, #fb7185); }
+.risk-chip.medium { background: linear-gradient(135deg, #ff8800, #fb923c); }
+.risk-chip.watch { background: linear-gradient(135deg, #facc16, #fde68a); color: #3a2500; }
+.risk-chip.normal { background: linear-gradient(135deg, #22c55e, #4ade80); }
+.contract-op-row {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.mini-op-btn,
+.contract-action-btn {
+  border: 1px solid rgba(14, 165, 233, 0.22);
+  background: rgba(7, 24, 41, 0.76);
+  color: #d9f7ff;
+  border-radius: 10px;
+  padding: 7px 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.mini-op-btn:hover,
+.contract-action-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(2, 10, 24, 0.35);
+  background: rgba(14, 165, 233, 0.16);
+}
+.mini-op-btn.warning,
+.contract-action-btn.warning {
+  border-color: rgba(245, 63, 63, 0.4);
+  color: #ffd1d1;
+}
+.contract-action-btn.primary {
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.34), rgba(6, 182, 212, 0.24));
+  border-color: rgba(6, 182, 212, 0.44);
+}
+.contract-action-btn.pulse {
+  animation: ctaPulse 1.25s ease-in-out infinite;
+}
+.contract-ai-panel {
+  position: sticky;
+  top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: calc(100vh - 140px);
+  overflow: auto;
+  min-width: 0;
+}
+.contract-ai-badge {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(245, 63, 63, 0.14);
+  color: #ffd2d2;
+  border: 1px solid rgba(245, 63, 63, 0.24);
+  font-size: 11px;
+}
+.contract-ai-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.contract-ai-meta-card {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(14, 165, 233, 0.12);
+}
+.contract-ai-meta-card.warning {
+  border-color: rgba(255, 136, 0, 0.26);
+}
+.contract-ai-meta-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: #83b8cf;
+}
+.contract-ai-meta-card strong {
+  font-size: 15px;
+  color: #f4fcff;
+}
+.contract-risk-tags {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.contract-risk-tag {
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: #fff2d1;
+  background: rgba(250, 204, 22, 0.12);
+  border: 1px solid rgba(250, 204, 22, 0.22);
+}
+.contract-ai-section {
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(6, 20, 34, 0.66);
+  border: 1px solid rgba(14, 165, 233, 0.12);
+  min-width: 0;
+}
+.contract-ai-title {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #f3fbff;
+}
+.contract-info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.contract-info-item {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(14, 165, 233, 0.09);
+}
+.contract-info-label {
+  display: block;
+  font-size: 11px;
+  color: #86b7cd;
+  margin-bottom: 4px;
+}
+.contract-info-value {
+  font-size: 13px;
+  color: #f8feff;
+}
+.contract-info-value.risk {
+  color: #ffb4b4;
+}
+.contract-clause-list,
+.contract-compliance-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 260px;
+  overflow: auto;
+  padding-right: 4px;
+}
+.contract-clause-item {
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(14, 165, 233, 0.1);
+  background: rgba(255,255,255,0.02);
+}
+.contract-clause-item.highlight {
+  border-color: rgba(245, 63, 63, 0.2);
+}
+.contract-clause-item.active {
+  background: linear-gradient(135deg, rgba(245, 63, 63, 0.22), rgba(245, 63, 63, 0.12));
+  box-shadow: 0 0 18px rgba(245, 63, 63, 0.18);
+}
+.contract-clause-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: #fff;
+}
+.clause-warning {
+  color: #facc16;
+  text-shadow: 0 0 12px rgba(250, 204, 22, 0.55);
+}
+.contract-clause-tag {
+  margin-left: auto;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #fff;
+  background: #f53f3f;
+}
+.contract-clause-text {
+  line-height: 1.7;
+  color: #f4fbff;
+}
+.contract-compliance-item {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(14, 165, 233, 0.1);
+}
+.contract-compliance-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.contract-compliance-line {
+  font-size: 12px;
+  line-height: 1.7;
+  color: #d6eef8;
+}
+.contract-compliance-line span {
+  color: #8dbed4;
+}
+.contract-ai-summary {
+  border-radius: 14px;
+  padding: 14px;
+  background: linear-gradient(135deg, rgba(245, 63, 63, 0.14), rgba(14, 165, 233, 0.08));
+  border: 1px solid rgba(245, 63, 63, 0.18);
+}
+.contract-ai-summary-level {
+  font-size: 14px;
+  font-weight: 800;
+  color: #ffb7b7;
+  margin-bottom: 8px;
+}
+.contract-ai-summary-list {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.8;
+}
+.contract-ai-summary-list li {
+  color: #f7fcff;
+  font-size: 13px;
+}
+.contract-ai-advice {
+  margin-top: 10px;
+  color: #ffe4e4;
+  font-size: 13px;
+}
+.contract-ai-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.contract-bottom-panel {
+  margin-bottom: 8px;
+}
+
+@keyframes panelSweep {
+  0% { transform: translateX(-120%); }
+  50% { transform: translateX(120%); }
+  100% { transform: translateX(120%); }
+}
+@keyframes panelBreath {
+  0%, 100% { box-shadow: 0 18px 48px rgba(2, 12, 27, 0.45), 0 0 0 rgba(6, 182, 212, 0); }
+  50% { box-shadow: 0 18px 48px rgba(2, 12, 27, 0.45), 0 0 26px rgba(6, 182, 212, 0.12); }
+}
+@keyframes sweepLine {
+  0% { transform: translateX(-40%); opacity: 0.1; }
+  50% { transform: translateX(40%); opacity: 0.85; }
+  100% { transform: translateX(80%); opacity: 0.1; }
+}
+@keyframes riskBlink {
+  0%, 100% { opacity: 1; box-shadow: 0 0 12px rgba(245, 63, 63, 0.9); }
+  50% { opacity: 0.45; box-shadow: 0 0 22px rgba(245, 63, 63, 0.95); }
+}
+@keyframes ctaPulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(14, 165, 233, 0); }
+  50% { box-shadow: 0 0 22px rgba(14, 165, 233, 0.42); }
+}
+
+@media (max-width: 1440px) {
+  .contract-kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .contract-main-grid {
+    grid-template-columns: 1fr;
+  }
+  .contract-ai-panel {
+    position: relative;
+    top: 0;
+    max-height: none;
+  }
+}
+@media (max-width: 1200px) {
+  .contract-pie-row,
+  .contract-ai-meta,
+  .contract-ai-actions {
+    grid-template-columns: 1fr;
+  }
+  .contract-topbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .contract-topbar-right {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+@media (max-width: 980px) {
+  .contract-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .contract-screen-title {
+    font-size: 22px;
+  }
+  .contract-table-wrap {
+    min-height: 280px;
+  }
+  .contract-main-table {
+    min-width: 960px;
+  }
+  .contract-info-grid {
+    grid-template-columns: 1fr;
+  }
+}
 </style>

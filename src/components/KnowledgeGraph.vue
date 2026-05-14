@@ -77,7 +77,13 @@ function render() {
         highlight: { lineWidth: 3, stroke: '#60a5fa', shadowColor: '#3b82f6', shadowBlur: 16 },
       },
     },
-    defaultEdge: { type: 'quadratic', style: { lineWidth: 1.5 } },
+    defaultEdge: {
+      type: 'quadratic',
+      style: { lineWidth: 1.5 },
+      stateStyles: {
+        highlight: { stroke: '#60a5fa', lineWidth: 2.5, shadowColor: '#3b82f6', shadowBlur: 10 },
+      },
+    },
   })
 
   const data = buildG6Data(props.graphData)
@@ -87,6 +93,7 @@ function render() {
   graph.on('node:click', (evt) => {
     const id = evt.item.getID()
     graph.getNodes().forEach((n) => graph.setItemState(n, 'highlight', false))
+    graph.getEdges().forEach((edge) => graph.setItemState(edge, 'highlight', false))
     graph.setItemState(evt.item, 'highlight', true)
     const neighbors = new Set([id])
     graph.getEdges().forEach((edge) => {
@@ -94,6 +101,7 @@ function render() {
       if (m.source === id || m.target === id) {
         neighbors.add(m.source)
         neighbors.add(m.target)
+        graph.setItemState(edge, 'highlight', true)
       }
     })
     graph.getNodes().forEach((n) => {
