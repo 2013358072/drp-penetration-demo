@@ -1,5 +1,5 @@
 <template>
-  <div class="dbrd">
+  <div class="dbrd" :class="{ 'cockpit-compact': viewMode === 'cockpit' && !drillMode }">
     <!-- ==================== 驾驶舱模式 ==================== -->
     <template v-if="viewMode === 'cockpit' && !drillMode">
       <!-- 预警 Toast -->
@@ -84,7 +84,7 @@
 
           <!-- Row 3: 风险样本表格 -->
           <section class="panel-lg panel-table">
-            <h3 class="p-title">风险样本 · 点击下钻</h3>
+            <h3 class="p-title">风险样本 · 点击进入风险中心</h3>
             <div class="compact-table-wrap">
               <table class="compact-table">
                 <thead>
@@ -97,7 +97,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="r in RISK_SAMPLES" :key="r.id" @click="goScene(r)" class="ct-row">
+                  <tr v-for="r in dashboardRiskSamples" :key="r.id" @click="goScene(r)" class="ct-row">
                     <td class="ct-mono">{{ r.id }}</td>
                     <td>{{ r.type }}</td>
                     <td class="ct-desc">{{ r.summary.length > 22 ? r.summary.slice(0, 22) + '...' : r.summary }}</td>
@@ -122,14 +122,22 @@
                 </div>
                 <EChart class="bd-chart" :option="boardInvestChart" />
               </div>
-              <div class="board-card" @click="enterDrill('funds')">
-                <div class="bd-header"><span class="bd-icon">💰</span><span class="bd-name">资金管理</span><RiskBadge level="high" /></div>
-                <div class="bd-kpis"><span class="bd-kpi"><strong>1,247</strong><small>亿可归集</small></span><span class="bd-kpi warn"><strong>9,200</strong><small>万被拦截</small></span><span class="bd-kpi"><strong>87%</strong><small>归集率</small></span></div>
+              <div class="board-card" @click="openFundsPage">
+                <div class="bd-header"><span class="bd-icon">💰</span><span class="bd-name">资金管理</span><RiskBadge :level="fundsBoardRiskLevel" /></div>
+                <div class="bd-kpis">
+                  <span class="bd-kpi"><strong>{{ fundsBoardStats.totalBalanceYi }}</strong><small>亿样本余额</small></span>
+                  <span class="bd-kpi warn"><strong>{{ fundsBoardStats.riskAmountWan }}</strong><small>万异常支付</small></span>
+                  <span class="bd-kpi"><strong>{{ fundsBoardStats.healthRate }}</strong><small>安全占比</small></span>
+                </div>
                 <EChart class="bd-chart" :option="boardFundsChart" />
               </div>
-              <div class="board-card" @click="enterDrill('procurement')">
-                <div class="bd-header"><span class="bd-icon">📦</span><span class="bd-name">采购招标</span><RiskBadge level="critical" /></div>
-                <div class="bd-kpis"><span class="bd-kpi"><strong>7</strong><small>在途标段</small></span><span class="bd-kpi warn"><strong>0.94</strong><small>围标概率</small></span><span class="bd-kpi"><strong>3</strong><small>触发预警</small></span></div>
+              <div class="board-card" @click="openProcurementPage">
+                <div class="bd-header"><span class="bd-icon">📦</span><span class="bd-name">采购招标</span><RiskBadge :level="procurementBoardRiskLevel" /></div>
+                <div class="bd-kpis">
+                  <span class="bd-kpi"><strong>{{ procurementBoardStats.packageCount }}</strong><small>在途标段</small></span>
+                  <span class="bd-kpi warn"><strong>{{ procurementBoardStats.maxAiScore }}</strong><small>围标概率</small></span>
+                  <span class="bd-kpi"><strong>{{ procurementBoardStats.alertCount }}</strong><small>触发预警</small></span>
+                </div>
                 <EChart class="bd-chart" :option="boardProcurementChart" />
               </div>
               <div class="board-card" @click="enterDrill('contract')">
@@ -864,7 +872,7 @@
                   </table>
                 </div>
                 <div style="margin-top:10px;text-align:center">
-                  <button class="btn btn-primary" @click="goScene(RISK_SAMPLES.find(r=>r.id==='R04'))">生成管理费用审计工单</button>
+                  <button class="btn btn-primary" @click="goScene(RISK_SAMPLES.find(r=>r.id==='R03'))">生成管理费用审计工单</button>
                 </div>
               </template>
             </template>
@@ -1490,6 +1498,7 @@ import {
   GRAPH_PROPERTY, GRAPH_FINANCE, GRAPH_SALARY,
   GRAPH_OVERSEAS, GRAPH_BANKING,
 } from '@/mock/index.js'
+import { getRiskCenterLocation, getPenetrationLocation } from '@/utils/navigation.js'
 
 const router = useRouter()
 import { matchQA, QA_PRESETS, AI_PROACTIVE_ALERTS, GRAPH_SUPPLIER_DATA } from '@/mock/qa.js'
@@ -1579,10 +1588,10 @@ const boardInvestChart = computed(() => ({
 const boardFundsChart = computed(() => ({
   backgroundColor: 'transparent',
   series: [{ type: 'gauge', radius: '85%', center: ['50%', '55%'], startAngle: 200, endAngle: -20,
-    axisLine: { lineStyle: { width: 6, color: [[0.87, '#22c55e'], [1, '#3b82f6']] } },
+    axisLine: { lineStyle: { width: 6, color: [[fundsBoardStats.value.healthRateValue / 100, '#22c55e'], [1, '#3b82f6']] } },
     pointer: { length: '55%', width: 3, itemStyle: { color: '#e8f1ff' } },
     detail: { valueAnimation: true, formatter: '{value}%', fontSize: 14, color: '#e8f1ff', offsetCenter: [0, '65%'] },
-    data: [{ value: 87, name: '归集率' }],
+    data: [{ value: fundsBoardStats.value.healthRateValue, name: '安全占比' }],
   }],
 }))
 
@@ -1590,16 +1599,13 @@ const boardProcurementChart = computed(() => ({
   backgroundColor: 'transparent',
   grid: { left: 8, right: 8, top: 8, bottom: 20 },
   tooltip: { trigger: 'axis' },
-  xAxis: { type: 'category', data: ['0501', '0502', '0503', '0504', '0505'], axisLabel: { color: '#8ba3c7', fontSize: 10 } },
+  xAxis: { type: 'category', data: procurementBoardChart.value.map((item) => item.id.replace('CG-2026-', '')), axisLabel: { color: '#8ba3c7', fontSize: 10 } },
   yAxis: { type: 'value', max: 1, axisLabel: { color: '#8ba3c7', fontSize: 9 }, splitLine: { lineStyle: { color: 'rgba(59,130,246,0.08)' } } },
   series: [{
-    type: 'bar', data: [
-      { value: 0.94, itemStyle: { color: '#ef4444' } },
-      { value: 0.32, itemStyle: { color: '#f97316' } },
-      { value: 0.18, itemStyle: { color: '#eab308' } },
-      { value: 0.08, itemStyle: { color: '#22c55e' } },
-      { value: 0.05, itemStyle: { color: '#22c55e' } },
-    ],
+    type: 'bar', data: procurementBoardChart.value.map((item) => ({
+      value: item.aiScore,
+      itemStyle: { color: item.aiScore > 0.8 ? '#ef4444' : item.aiScore > 0.3 ? '#f97316' : '#22c55e' },
+    })),
   }],
 }))
 
@@ -1662,7 +1668,59 @@ const boardContractOverviewChart = computed(() => {
   }
 })
 
+const fundsBoardStats = computed(() => {
+  const totalBalanceWan = ACCOUNTS.reduce((sum, account) => sum + account.balanceWan, 0)
+  const riskyFlowAmountWan = FUND_FLOWS.filter((item) => item.risk).reduce((sum, item) => sum + item.amountWan, 0)
+  const safeBalanceWan = ACCOUNTS.filter((account) => !account.riskFlag).reduce((sum, account) => sum + account.balanceWan, 0)
+  const healthRateValue = totalBalanceWan ? Number(((safeBalanceWan / totalBalanceWan) * 100).toFixed(1)) : 0
+  return {
+    totalBalanceWan,
+    riskAmountWan: riskyFlowAmountWan.toLocaleString(),
+    totalBalanceYi: (totalBalanceWan / 10000).toFixed(1).replace(/\.0$/, ''),
+    healthRateValue,
+    healthRate: `${healthRateValue}%`,
+  }
+})
+
+const fundsBoardRiskLevel = computed(() => FUND_FLOWS.some((item) => item.risk) ? 'high' : 'low')
+const procurementBoardChart = computed(() =>
+  [...PROCUREMENT_PACKAGES]
+    .sort((a, b) => b.aiScore - a.aiScore)
+    .slice(0, 5)
+)
+const procurementBoardStats = computed(() => ({
+  packageCount: PROCUREMENT_PACKAGES.length,
+  maxAiScore: Math.max(...PROCUREMENT_PACKAGES.map((item) => item.aiScore), 0).toFixed(2),
+  alertCount: PROCUREMENT_PACKAGES.filter((item) => item.aiScore >= 0.8).length,
+}))
+const procurementBoardRiskLevel = computed(() => procurementBoardStats.value.alertCount > 0 ? 'critical' : 'medium')
+
 // ==================== LEFT COLUMN ====================
+
+const dashboardRiskBuckets = computed(() => {
+  const levelMap = {
+    critical: { label: '重大', color: '#ef4444' },
+    high: { label: '高', color: '#f97316' },
+    medium: { label: '中', color: '#eab308' },
+    low: { label: '低', color: '#22c55e' },
+  }
+  const rawCounts = Object.keys(levelMap).map((level) => ({
+    level,
+    ...levelMap[level],
+    count: RISK_SAMPLES.filter((item) => item.level === level).length,
+  }))
+  const totalRaw = rawCounts.reduce((sum, item) => sum + item.count, 0) || 1
+  let assigned = 0
+  const scaled = rawCounts.map((item, index) => {
+    if (index === rawCounts.length - 1) {
+      return { ...item, value: KPI.openRisks - assigned }
+    }
+    const value = Math.max(1, Math.round((item.count / totalRaw) * KPI.openRisks))
+    assigned += value
+    return { ...item, value }
+  })
+  return scaled
+})
 
 // Panel 1: 风险分布环形图
 const riskDonutOption = computed(() => ({
@@ -1672,17 +1730,16 @@ const riskDonutOption = computed(() => ({
     type: 'pie', radius: ['55%', '75%'], center: ['50%', '50%'],
     label: { show: false },
     emphasis: { label: { show: true, fontSize: 12, color: '#e8f1ff' } },
-    data: [
-      { value: 2, name: '重大', itemStyle: { color: '#ef4444' } },
-      { value: 11, name: '高', itemStyle: { color: '#f97316' } },
-      { value: 15, name: '中', itemStyle: { color: '#eab308' } },
-      { value: 9, name: '低', itemStyle: { color: '#22c55e' } },
-    ],
+    data: dashboardRiskBuckets.value.map((item) => ({
+      value: item.value,
+      name: item.label,
+      itemStyle: { color: item.color },
+    })),
     itemStyle: { borderColor: '#040d1a', borderWidth: 3 },
   }],
   graphic: [{
     type: 'text', left: 'center', top: 'center',
-    style: { text: '37', fill: '#e8f1ff', fontSize: 28, fontWeight: 'bold', fontFamily: 'ui-monospace, monospace' },
+    style: { text: String(KPI.openRisks), fill: '#e8f1ff', fontSize: 28, fontWeight: 'bold', fontFamily: 'ui-monospace, monospace' },
   }, {
     type: 'text', left: 'center', top: '58%',
     style: { text: '总风险', fill: '#8ba3c7', fontSize: 10 },
@@ -1728,17 +1785,23 @@ const sectorRiskBarOption = computed(() => ({
 }))
 
 // Panel 3: 资金池 KPI 微卡片
-const fundsMicroKPIs = [
-  { icon: '💵', label: '可归集资金', value: '1,247亿' },
-  { icon: '✅', label: '已归集', value: '1,089亿' },
-  { icon: '📊', label: '大额笔数', value: '237' },
-  { icon: '🛡️', label: '自动拦截', value: '9' },
-  { icon: '🚚', label: '在途资金', value: '158亿' },
-  { icon: '🏢', label: '子公司', value: '82' },
-]
+const fundsMicroKPIs = computed(() => {
+  const totalBalanceWan = ACCOUNTS.reduce((sum, item) => sum + item.balanceWan, 0)
+  const riskyBalanceWan = ACCOUNTS.filter((item) => item.riskFlag).reduce((sum, item) => sum + item.balanceWan, 0)
+  const safeBalanceWan = totalBalanceWan - riskyBalanceWan
+  return [
+    { icon: '💵', label: '样本资金池', value: `${(totalBalanceWan / 10000).toFixed(1).replace(/\.0$/, '')}亿` },
+    { icon: '✅', label: '安全余额', value: `${(safeBalanceWan / 10000).toFixed(1).replace(/\.0$/, '')}亿` },
+    { icon: '📊', label: '流水样本', value: `${FUND_FLOWS.length}` },
+    { icon: '🛡️', label: '异常支付', value: `${FUND_FLOWS.filter((item) => item.risk).length}` },
+    { icon: '🚚', label: '风险余额', value: `${(riskyBalanceWan / 10000).toFixed(1).replace(/\.0$/, '')}亿` },
+    { icon: '🏢', label: '法人总数', value: `${KPI.legalEntities}` },
+  ]
+})
 
 // Panel 4: 合同履约
 const topContracts = computed(() => CONTRACTS.slice(0, 4))
+const dashboardRiskSamples = computed(() => RISK_SAMPLES.slice(0, 8))
 const overpayWarning = computed(() => {
   const ct = CONTRACT_DETAILS['CT-2026-0312']
   if (ct?.performance?.overpaymentWarning) return 'CT-2026-0312 已全额付款，交付仅60%！'
@@ -1748,14 +1811,14 @@ const overpayWarning = computed(() => {
 // ==================== CENTER COLUMN ====================
 
 // Row 1: 6 KPI 大数字
-const centerKPIs = [
-  { label: '法人', display: '82', sub: '全级次纳入', isRisk: false },
-  { label: '账户', display: '1,246', sub: '司库全景池', isRisk: false },
-  { label: '项目', display: '42', sub: '投资可下钻', isRisk: false },
-  { label: '风险', display: '37', sub: '闭环可跟踪', isRisk: true },
-  { label: '合同', display: '7', sub: 'AI条款智能解析', isRisk: false },
-  { label: '在途资金', display: '1,247亿', sub: '司库实时监控', isRisk: true },
-]
+const centerKPIs = computed(() => [
+  { label: '法人', display: String(KPI.legalEntities), sub: '全级次纳入', isRisk: false },
+  { label: '账户', display: KPI.bankAccounts.toLocaleString('zh-CN'), sub: '司库全景池', isRisk: false },
+  { label: '项目', display: String(KPI.investmentProjects), sub: '投资可下钻', isRisk: false },
+  { label: '风险', display: String(KPI.openRisks), sub: '闭环可跟踪', isRisk: true },
+  { label: '合同', display: String(contractBoardTotal.value), sub: 'AI条款智能解析', isRisk: false },
+  { label: '样本资金', display: `${fundsBoardStats.value.totalBalanceYi}亿`, sub: '实时穿透监控', isRisk: FUND_FLOWS.some((item) => item.risk) },
+])
 
 // Row 2: 热力图
 const { domains: hmDomains, cells: hmCells } = heatmapCells()
@@ -1799,6 +1862,27 @@ const drillEntryCards = [
 
 // ==================== RIGHT COLUMN ====================
 
+const dashboardAlertTrend = computed(() => {
+  const monthLabels = Array.from({ length: 12 }, (_, index) => {
+    const date = new Date()
+    date.setMonth(date.getMonth() - (11 - index))
+    return `${date.getMonth() + 1}月`
+  })
+  const highRisk = monthLabels.map(() => 0)
+  const mediumRisk = monthLabels.map(() => 0)
+  WORK_ORDERS.forEach((item) => {
+    const due = new Date(item.due)
+    if (Number.isNaN(due.getTime())) return
+    const label = `${due.getMonth() + 1}月`
+    const index = monthLabels.findIndex((month) => month === label)
+    if (index === -1) return
+    const risk = RISK_SAMPLES.find((sample) => sample.id === item.riskId)
+    if (risk?.level === 'critical' || risk?.level === 'high') highRisk[index] += 1
+    else mediumRisk[index] += 1
+  })
+  return { monthLabels, highRisk, mediumRisk }
+})
+
 // Panel 5: 预警趋势
 const alertTrendOption = computed(() => ({
   backgroundColor: 'transparent',
@@ -1807,7 +1891,7 @@ const alertTrendOption = computed(() => ({
   grid: { left: 8, right: 16, top: 32, bottom: 12 },
   xAxis: {
     type: 'category', boundaryGap: false,
-    data: ['5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月', '1月', '2月', '3月', '4月'],
+    data: dashboardAlertTrend.value.monthLabels,
     axisLabel: { color: '#8ba3c7', fontSize: 9 },
   },
   yAxis: { type: 'value', axisLabel: { color: '#8ba3c7', fontSize: 9 }, splitLine: { lineStyle: { color: 'rgba(0,229,255,0.08)' } } },
@@ -1816,13 +1900,13 @@ const alertTrendOption = computed(() => ({
       name: '高风险', type: 'line', smooth: true, symbol: 'none',
       areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(239,68,68,0.35)' }, { offset: 1, color: 'rgba(239,68,68,0.02)' }] } },
       lineStyle: { color: '#ef4444', width: 1.5 },
-      data: [12, 9, 15, 11, 18, 14, 22, 19, 17, 21, 24, 20],
+      data: dashboardAlertTrend.value.highRisk,
     },
     {
       name: '中低风险', type: 'line', smooth: true, symbol: 'none',
       areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(249,115,22,0.25)' }, { offset: 1, color: 'rgba(249,115,22,0.02)' }] } },
       lineStyle: { color: '#f97316', width: 1.5 },
-      data: [30, 28, 35, 33, 31, 37, 29, 34, 36, 32, 31, 35],
+      data: dashboardAlertTrend.value.mediumRisk,
     },
   ],
 }))
@@ -2320,7 +2404,15 @@ function enterDrill(modId) {
 }
 
 function openInvestmentPage() {
-  router.push('/investment')
+  router.push(getPenetrationLocation('investment'))
+}
+
+function openFundsPage() {
+  router.push(getPenetrationLocation('funds'))
+}
+
+function openProcurementPage() {
+  router.push(getPenetrationLocation('procurement'))
 }
 
 function exitDrill() {
@@ -2376,27 +2468,8 @@ const drillModuleLabel = computed(() => {
 
 // 场景跳转 - 风险样本→穿透模块
 function goScene(r) {
-  const map = {
-    investment: 'investment', funds: 'funds', procurement: 'procurement', contract: 'contract',
-    finance: 'finance', property: 'property', salary: 'salary',
-    banking: 'banking', overseas: 'overseas', accounting: 'accounting',
-  }
-  const mod = map[r.scene]
-  if (!mod) return
-  enterDrill(mod)
-  nextTick(() => {
-    if (r.scene === 'investment' && r.id === 'R01') drillToLevel(3, 'P01', '东南亚某国路桥PPP')
-    if (r.scene === 'investment' && r.id === 'R11') drillToLevel(3, 'P06', '陇东风电基地二期')
-    if (r.scene === 'funds' && r.id === 'R02') drillToLevel(4, 'v1', '凭证·流水明细')
-    if (r.scene === 'procurement' && r.id === 'R06') drillToLevel(3, 'PKG1', 'CG-2026-0501')
-    if (r.scene === 'contract' && r.id === 'R05') drillToLevel(3, 'CT0312', 'CT-2026-0312')
-    if (r.scene === 'finance' && r.id === 'R04') drillToLevel(3, 'fin_exp', '管理费用科目')
-    if (r.scene === 'salary' && r.id === 'R08') drillToLevel(3, 'sal_cons', '咨询费异常')
-    if (r.scene === 'property' && r.id === 'R07') drillToLevel(3, 'prop_spv', '某三级子公司股权变更')
-    if (r.scene === 'overseas' && r.id === 'R09') drillToLevel(3, 'ovs_cmp', '某国路桥PPP')
-    if (r.scene === 'banking' && r.id === 'R03') drillToLevel(3, 'bnk_tx', '某笔金融交易')
-    if (r.scene === 'accounting' && r.id === 'R10') drillToLevel(3, 'acc_entry', '异常分录')
-  })
+  if (!r) return
+  router.push(getRiskCenterLocation(r))
 }
 // ==================== 穿透数据辅助 ====================
 const filterCompaniesBySector = computed(() => {
@@ -3232,8 +3305,10 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   height: calc(100vh - 56px);
+  min-height: calc(100vh - 56px);
   background: linear-gradient(180deg, #040d1a 0%, #0a1929 100%);
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: hidden;
   position: relative;
 }
 
@@ -3260,9 +3335,10 @@ onUnmounted(() => {
   gap: 8px;
   padding: 8px;
   min-height: 0;
-  overflow: hidden;
+  height: 100%;
+  overflow: visible;
 }
-.col { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow: hidden; }
+.col { display: flex; flex-direction: column; gap: 8px; min-height: 0; min-width: 0; }
 .col-left { flex: 0 0 25%; width: 25%; }
 .col-center { flex: 0 0 50%; width: 50%; }
 .col-right { flex: 0 0 25%; width: 25%; }
@@ -3433,6 +3509,255 @@ onUnmounted(() => {
 
 /* ==================== AI PANEL ==================== */
 .panel-ai { display: flex; flex-direction: column; overflow: hidden; }
+.selected td { background: rgba(59, 130, 246, 0.12) !important; }
+
+.cockpit-compact .toast-bar {
+  top: 6px;
+  padding: 6px 12px;
+  font-size: 11px;
+  max-width: 540px;
+}
+
+.cockpit-compact .dbrd-body {
+  gap: 6px;
+  padding: 6px;
+}
+
+.cockpit-compact .col-left { flex: 0 0 23%; width: 23%; }
+.cockpit-compact .col-center { flex: 0 0 54%; width: 54%; }
+.cockpit-compact .col-right { flex: 0 0 23%; width: 23%; }
+
+.cockpit-compact .panel-lg {
+  padding: 8px 9px;
+  border-radius: 7px;
+}
+
+.cockpit-compact .p-title {
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+
+.cockpit-compact .p-title::before {
+  height: 10px;
+}
+
+.cockpit-compact .p-chart {
+  min-height: 92px;
+}
+
+.cockpit-compact .heat-chart {
+  min-height: 142px;
+}
+
+.cockpit-compact .col-left .panel-lg:nth-child(1) { flex: 0.92; }
+.cockpit-compact .col-left .panel-lg:nth-child(2) { flex: 1.02; }
+.cockpit-compact .col-left .panel-lg:nth-child(3) { flex: 1.05; }
+.cockpit-compact .col-left .panel-lg:nth-child(4) { flex: 0.96; }
+
+.cockpit-compact .col-right .panel-lg:nth-child(1) { flex: 0.9; }
+.cockpit-compact .col-right .panel-lg:nth-child(2) { flex: 1.08; }
+
+.cockpit-compact .kpi-row {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-rows: 1fr;
+  gap: 5px;
+}
+
+.cockpit-compact .kpi-card {
+  padding: 7px 9px;
+  min-height: 66px;
+}
+
+.cockpit-compact .kpi-num {
+  font-size: 20px;
+}
+
+.cockpit-compact .kpi-lbl {
+  font-size: 9px;
+}
+
+.cockpit-compact .kpi-sub {
+  font-size: 8px;
+}
+
+.cockpit-compact .panel-heatmap {
+  flex: 1.12;
+  min-height: 128px;
+}
+
+.cockpit-compact .panel-table {
+  flex: 0.94;
+  min-height: 92px;
+}
+
+.cockpit-compact .compact-table {
+  font-size: 10px;
+}
+
+.cockpit-compact .compact-table th,
+.cockpit-compact .compact-table td {
+  padding: 4px 6px;
+}
+
+.cockpit-compact .ct-desc {
+  max-width: 120px;
+}
+
+.cockpit-compact .funds-micro-grid {
+  gap: 3px;
+}
+
+.cockpit-compact .fm-card {
+  padding: 5px 6px;
+}
+
+.cockpit-compact .fm-icon {
+  font-size: 12px;
+}
+
+.cockpit-compact .fm-val {
+  font-size: 13px;
+}
+
+.cockpit-compact .fm-label {
+  font-size: 8px;
+}
+
+.cockpit-compact .contract-perf-list {
+  gap: 4px;
+}
+
+.cockpit-compact .cp-name {
+  font-size: 10px;
+}
+
+.cockpit-compact .cp-bar {
+  height: 4px;
+}
+
+.cockpit-compact .cp-pct {
+  font-size: 9px;
+  min-width: 26px;
+}
+
+.cockpit-compact .overpay-warn {
+  margin-top: 4px;
+  padding: 5px 6px;
+  font-size: 9px;
+}
+
+.cockpit-compact .module-boards {
+  flex: 1.2;
+  min-height: 214px;
+  overflow: hidden;
+  padding: 8px 8px 5px;
+}
+
+.cockpit-compact .board-grid {
+  min-height: 184px;
+  gap: 5px;
+}
+
+.cockpit-compact .board-card {
+  padding: 5px 7px;
+  gap: 1px;
+}
+
+.cockpit-compact .bd-icon {
+  font-size: 12px;
+}
+
+.cockpit-compact .bd-name {
+  font-size: 10px;
+}
+
+.cockpit-compact .bd-kpis {
+  gap: 6px;
+}
+
+.cockpit-compact .bd-kpi strong {
+  font-size: 12px;
+}
+
+.cockpit-compact .bd-kpi small {
+  font-size: 7px;
+}
+
+.cockpit-compact .bd-chart {
+  min-height: 34px;
+}
+
+.cockpit-compact .panel-ai-btn {
+  gap: 6px;
+}
+
+.cockpit-compact .ai-launcher {
+  padding: 10px 12px;
+  margin: 4px 0 6px;
+  font-size: 12px;
+}
+
+.cockpit-compact .ai-launch-icon {
+  font-size: 16px;
+}
+
+.cockpit-compact .ai-alerts {
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+.cockpit-compact .ai-alerts-title {
+  margin-bottom: 4px;
+  font-size: 10px;
+}
+
+.cockpit-compact .ai-alert-item {
+  padding: 5px 6px;
+  margin-bottom: 3px;
+}
+
+.cockpit-compact .aa-title {
+  font-size: 9px;
+}
+
+.cockpit-compact .aa-time {
+  font-size: 8px;
+}
+
+@media (max-width: 1600px) {
+  .dbrd-body {
+    display: grid;
+    grid-template-columns: minmax(300px, 0.95fr) minmax(0, 1.45fr);
+    align-items: start;
+  }
+  .col-left,
+  .col-center,
+  .col-right {
+    width: auto;
+    flex: initial;
+  }
+  .col-right {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 1200px) {
+  .dbrd-body {
+    grid-template-columns: 1fr;
+  }
+  .cockpit-compact .kpi-row,
+  .board-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+  }
+  .cockpit-compact .module-boards {
+    overflow: auto;
+  }
+  .kpi-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: none;
+  }
+}
 .ai-chat { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .ai-presets { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
 .ai-preset-btn {

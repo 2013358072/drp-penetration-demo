@@ -68,7 +68,8 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import DrillStepBar from '@/components/DrillStepBar.vue'
 import EChart from '@/components/EChart.vue'
 import RiskBadge from '@/components/RiskBadge.vue'
@@ -98,6 +99,7 @@ const steps = [
   { key: 'b4', label: '关联图谱' },
 ]
 
+const route = useRoute()
 const step = ref(0)
 const bizId = ref(null)
 
@@ -116,6 +118,19 @@ const chartBank = computed(() => ({
 }))
 
 function pickBiz(b) { bizId.value = b.id; step.value = 2 }
+
+function applyRouteQuery() {
+  const biz = BANKING_OVERVIEW.find((item) => item.id === route.query.businessId)
+  if (!biz) return
+  bizId.value = biz.id
+  step.value = 2
+}
+
+watch(
+  () => route.query.businessId,
+  () => applyRouteQuery(),
+  { immediate: true }
+)
 </script>
 
 <style scoped>

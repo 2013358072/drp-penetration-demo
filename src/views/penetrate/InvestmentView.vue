@@ -355,8 +355,8 @@
         </div>
         <div class="bottom-actions">
           <button type="button" class="op-btn primary" :class="{ pulse: pulseDispatch }" @click="dispatchWorkOrder">派发核查工单</button>
-          <button type="button" class="op-btn" @click="router.push('/contract')">查看项目合同</button>
-          <button type="button" class="op-btn" @click="router.push('/funds')">查看资金拨付记录</button>
+          <button type="button" class="op-btn" @click="openProjectContract">查看项目合同</button>
+          <button type="button" class="op-btn" @click="openFundsRecords">查看资金拨付记录</button>
         </div>
       </div>
     </section>
@@ -382,6 +382,7 @@ import {
   INVESTMENT_PROJECT_PROFILES,
   INVESTMENT_RELATION_GRAPHS,
 } from '@/mock/index.js'
+import { getWorkOrderLocation } from '@/utils/navigation.js'
 
 const router = useRouter()
 const scenarioTabs = ['全链穿透', '超预算监测', '关联交易识别']
@@ -1063,7 +1064,47 @@ function handleGraphSelect(payload) {
 function dispatchWorkOrder() {
   pulseDispatch.value = true
   showToast('检测到三重风险项目，已生成核查工单')
-  router.push('/work-orders')
+  router.push(getWorkOrderLocation({ workOrderId: primaryWorkOrderId(), riskId: relatedRiskId(), scene: 'investment' }))
+}
+
+function openProjectContract() {
+  router.push({
+    name: 'contract',
+    query: {
+      contractId: projectContractId(selectedProject.value.id),
+      riskId: relatedRiskId(),
+    },
+  })
+}
+
+function openFundsRecords() {
+  router.push({
+    name: 'funds',
+    query: {
+      accountId: selectedProject.value.id === 'P01' ? 'A2001' : '',
+      riskId: relatedRiskId(),
+    },
+  })
+}
+
+function relatedRiskId() {
+  const map = {
+    P01: 'R01',
+    P06: 'R11',
+  }
+  return map[selectedProject.value.id] || ''
+}
+
+function primaryWorkOrderId() {
+  return selectedProject.value.profile.alerts[0]?.workOrderId || ''
+}
+
+function projectContractId(projectId) {
+  const map = {
+    P01: 'CT-2025-4412',
+    P06: 'CT-2026-0001',
+  }
+  return map[projectId] || ''
 }
 
 function startClock() {

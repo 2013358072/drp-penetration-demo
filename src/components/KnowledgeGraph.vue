@@ -19,6 +19,8 @@ const emit = defineEmits(['select'])
 const wrap = ref(null)
 const container = ref(null)
 let graph = null
+let resizeObserver = null
+let resizeFrame = 0
 
 const typeColor = {
   group: '#3b82f6',
@@ -79,6 +81,7 @@ function applyExternalHighlight() {
 function render() {
   if (!container.value) return
   const w = wrap.value?.offsetWidth || 800
+  if (w <= 0 || props.height <= 0) return
   if (graph) {
     graph.destroy()
     graph = null
@@ -144,18 +147,37 @@ function render() {
   })
 }
 
+function scheduleResize() {
+  window.cancelAnimationFrame(resizeFrame)
+  resizeFrame = window.requestAnimationFrame(() => {
+    onResize()
+  })
+}
+
 function onResize() {
   if (!graph || !wrap.value) return
-  graph.changeSize(wrap.value.offsetWidth, props.height)
+  const width = wrap.value.offsetWidth
+  if (width <= 0 || props.height <= 0) return
+  graph.changeSize(width, props.height)
+  graph.fitCenter()
 }
 
 onMounted(() => {
   render()
   window.addEventListener('resize', onResize)
+  if (typeof ResizeObserver !== 'undefined' && wrap.value) {
+    resizeObserver = new ResizeObserver(() => {
+      scheduleResize()
+    })
+    resizeObserver.observe(wrap.value)
+  }
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)
+  resizeObserver?.disconnect()
+  resizeObserver = null
+  window.cancelAnimationFrame(resizeFrame)
   graph?.destroy()
   graph = null
 })

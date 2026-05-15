@@ -14,14 +14,24 @@ const props = defineProps({
 
 const host = ref(null)
 const chart = shallowRef(null)
+let resizeObserver = null
+let resizeFrame = 0
 
 function resize() {
   chart.value?.resize()
 }
 
+function scheduleResize() {
+  window.cancelAnimationFrame(resizeFrame)
+  resizeFrame = window.requestAnimationFrame(() => {
+    resize()
+  })
+}
+
 function init() {
   if (!host.value) return
   window.removeEventListener('resize', resize)
+  resizeObserver?.disconnect()
   if (chart.value) {
     chart.value.dispose()
     chart.value = null
@@ -32,11 +42,20 @@ function init() {
     if (typeof handler === 'function') chart.value.on(eventName, handler)
   })
   window.addEventListener('resize', resize)
+  if (typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(() => {
+      scheduleResize()
+    })
+    resizeObserver.observe(host.value)
+  }
 }
 
 onMounted(init)
 onBeforeUnmount(() => {
   window.removeEventListener('resize', resize)
+  resizeObserver?.disconnect()
+  resizeObserver = null
+  window.cancelAnimationFrame(resizeFrame)
   chart.value?.dispose()
   chart.value = null
 })

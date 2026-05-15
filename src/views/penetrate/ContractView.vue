@@ -307,12 +307,14 @@
 
 <script setup>
 import { computed, ref, watch, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import DrillStepBar from '@/components/DrillStepBar.vue'
 import EChart from '@/components/EChart.vue'
 import RiskBadge from '@/components/RiskBadge.vue'
 import KnowledgeGraph from '@/components/KnowledgeGraph.vue'
 import { SECTORS, COMPANIES, CONTRACTS, GRAPH_CONTRACT, companyById, CONTRACT_DETAILS, CONTRACT_NLP_STEPS, SUPPLIER_PROFILE } from '@/mock/index.js'
 
+const route = useRoute()
 const steps = [
   { key: 'c0', label: '合同总览' },
   { key: 'c1', label: '业务板块' },
@@ -469,6 +471,18 @@ function pickSector(s) { sectorId.value = s.id; step.value = 2 }
 function pickCompany(c) { companyId.value = c.id; step.value = 3 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)) }
+
+watch(
+  () => route.query.contractId,
+  async (contractId) => {
+    const target = CONTRACTS.find((item) => item.id === contractId)
+    if (!target) return
+    companyId.value = target.companyId
+    sectorId.value = companyById(target.companyId)?.sectorId || null
+    await selectContract(target)
+  },
+  { immediate: true }
+)
 </script>
 
 <style scoped>
