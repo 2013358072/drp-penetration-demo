@@ -9,6 +9,7 @@ import { onMounted, onBeforeUnmount, watch, ref, shallowRef } from 'vue'
 const props = defineProps({
   option: { type: Object, required: true },
   theme: { type: String, default: 'dark' },
+  events: { type: Object, default: () => ({}) },
 })
 
 const host = ref(null)
@@ -20,12 +21,16 @@ function resize() {
 
 function init() {
   if (!host.value) return
+  window.removeEventListener('resize', resize)
   if (chart.value) {
     chart.value.dispose()
     chart.value = null
   }
   chart.value = echarts.init(host.value, props.theme, { renderer: 'canvas' })
   chart.value.setOption(props.option, true)
+  Object.entries(props.events || {}).forEach(([eventName, handler]) => {
+    if (typeof handler === 'function') chart.value.on(eventName, handler)
+  })
   window.addEventListener('resize', resize)
 }
 
@@ -41,6 +46,11 @@ watch(
   (opt) => {
     if (chart.value && opt) chart.value.setOption(opt, true)
   },
+  { deep: true }
+)
+watch(
+  () => props.events,
+  () => init(),
   { deep: true }
 )
 </script>

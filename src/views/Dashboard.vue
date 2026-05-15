@@ -113,7 +113,7 @@
           <section class="module-boards">
             <h3 class="p-title">核心业务穿透 · 点击下钻</h3>
             <div class="board-grid">
-              <div class="board-card" @click="enterDrill('investment')">
+              <div class="board-card" @click="openInvestmentPage">
                 <div class="bd-header"><span class="bd-icon">📊</span><span class="bd-name">投资管理</span><RiskBadge :level="investmentBoardRiskLevel" /></div>
                 <div class="bd-kpis">
                   <span class="bd-kpi"><strong>{{ investmentBoardProjectCount }}</strong><small>个项目</small></span>
@@ -1469,6 +1469,7 @@
 
 <script setup>
 import { ref, computed, reactive, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import EChart from '@/components/EChart.vue'
 import RiskBadge from '@/components/RiskBadge.vue'
 import KnowledgeGraph from '@/components/KnowledgeGraph.vue'
@@ -1489,6 +1490,8 @@ import {
   GRAPH_PROPERTY, GRAPH_FINANCE, GRAPH_SALARY,
   GRAPH_OVERSEAS, GRAPH_BANKING,
 } from '@/mock/index.js'
+
+const router = useRouter()
 import { matchQA, QA_PRESETS, AI_PROACTIVE_ALERTS, GRAPH_SUPPLIER_DATA } from '@/mock/qa.js'
 
 // ==================== 核心状态 ====================
@@ -2314,6 +2317,10 @@ function enterDrill(modId) {
   drillMode.value = { module: modId }
   drillNode.value = { level: 0, label: '集团总览', id: 'root' }
   drillPath.value = []
+}
+
+function openInvestmentPage() {
+  router.push('/investment')
 }
 
 function exitDrill() {

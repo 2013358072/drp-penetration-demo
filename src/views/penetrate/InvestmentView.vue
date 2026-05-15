@@ -1,344 +1,379 @@
 <template>
-  <div class="view">
-    <DrillStepBar v-model="step" :steps="steps" />
+  <div class="investment-screen">
+    <section class="glass-panel invest-topbar">
+      <div>
+        <div class="screen-kicker">全景监管驾驶舱 · 投资穿透</div>
+        <h1 class="screen-title">投资项目全链路穿透监管驾驶舱</h1>
+        <p class="screen-desc">
+          从集团战略规划到板块分配、项目执行与底层资产穿透，重点识别超预算、进度滞后和关联交易三大风险。
+        </p>
+      </div>
+      <div class="topbar-right">
+        <div class="scenario-switcher">
+          <button
+            v-for="tab in scenarioTabs"
+            :key="tab"
+            type="button"
+            class="scenario-btn"
+            :class="{ active: activeScenario === tab }"
+            @click="activateScenario(tab)"
+          >
+            {{ tab }}
+          </button>
+        </div>
+        <div class="topbar-meta">
+          <div class="meta-card">
+            <span class="meta-label">实时时间</span>
+            <strong>{{ currentTime }}</strong>
+          </div>
+          <div class="meta-card success">
+            <span class="meta-label">刷新状态</span>
+            <strong>{{ refreshText }}</strong>
+          </div>
+        </div>
+      </div>
+    </section>
 
-    <div v-if="step === 0" class="panel block">
-      <h2 class="panel-title">集团投资总览（演示）</h2>
-      <p class="desc">保留原有集团到项目的穿透链路，并在当前页面下方增加超预算与关联交易专题看板。</p>
-      <div class="row">
-        <EChart class="chart" :option="chart0" />
-        <div class="table-wrap">
-          <table class="data-table">
+    <section class="invest-kpi-grid">
+      <article
+        v-for="card in summaryCards"
+        :key="card.key"
+        class="glass-panel kpi-card"
+        :class="card.status"
+        :title="`同比 ${card.yoy} / 环比 ${card.qoq}`"
+      >
+        <div class="kpi-head">
+          <span class="kpi-title">{{ card.label }}</span>
+          <span class="kpi-status">{{ card.statusText }}</span>
+        </div>
+        <div class="kpi-main">
+          <strong>{{ displayMetric(card) }}</strong>
+          <span>{{ card.unit }}</span>
+        </div>
+        <div class="kpi-foot">
+          <span>同比 {{ card.yoy }}</span>
+          <span>环比 {{ card.qoq }}</span>
+        </div>
+        <svg class="kpi-trend" viewBox="0 0 120 28" preserveAspectRatio="none">
+          <defs>
+            <linearGradient :id="`invest-kpi-${card.key}`" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#0ea5e9" />
+              <stop offset="100%" :stop-color="card.color" />
+            </linearGradient>
+          </defs>
+          <polyline
+            :points="sparklinePoints(card.trend)"
+            :stroke="`url(#invest-kpi-${card.key})`"
+            fill="none"
+            stroke-width="3"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </article>
+    </section>
+
+    <section class="glass-panel portfolio-panel">
+      <div class="panel-head">
+        <div>
+          <h2 class="panel-title">投资组合矩阵视图</h2>
+          <p class="panel-sub">点击热力矩阵单元格或板块柱体，自动筛选下方项目列表并联动右侧详情。</p>
+        </div>
+        <div class="panel-tags">
+          <span class="panel-tag danger">超预算板块标红</span>
+          <span class="panel-tag warning">进度滞后自动预警</span>
+          <span class="panel-tag focus">关联交易高风险高亮</span>
+        </div>
+      </div>
+      <div class="portfolio-grid">
+        <div class="chart-card">
+          <div class="chart-title-row">
+            <h3>板块 × 项目状态矩阵热力图</h3>
+            <span>五大板块 / 五类状态</span>
+          </div>
+          <EChart class="portfolio-chart" :option="matrixHeatmapOption" :events="matrixChartEvents" />
+        </div>
+        <div class="chart-card">
+          <div class="chart-title-row">
+            <h3>板块投资完成率柱状图</h3>
+            <span>计划与实际对比，点击柱体筛选项目</span>
+          </div>
+          <EChart class="portfolio-chart" :option="sectorBarOption" :events="sectorBarEvents" />
+        </div>
+      </div>
+    </section>
+
+    <section class="invest-main-grid" :class="{ collapsed: panelCollapsed }">
+      <section class="glass-panel list-panel">
+        <div class="panel-head compact">
+          <div>
+            <h2 class="panel-title">项目列表与筛选区</h2>
+            <p class="panel-sub">默认演示项目为陇东风电基地二期，支持超预算、滞后和关联交易一键筛选。</p>
+          </div>
+          <div class="list-head-stats">
+            <span class="mini-stat">当前项目 {{ filteredProjects.length }} 个</span>
+            <span class="mini-stat">默认项目 {{ defaultProjectCode }}</span>
+          </div>
+        </div>
+
+        <div class="filter-bar">
+          <label>
+            <span>板块</span>
+            <select v-model="sectorFilter">
+              <option value="all">全部板块</option>
+              <option v-for="sector in SECTORS" :key="sector.id" :value="sector.id">{{ sector.name }}</option>
+            </select>
+          </label>
+          <label>
+            <span>状态</span>
+            <select v-model="statusFilter">
+              <option value="all">全部状态</option>
+              <option v-for="item in statusFilterOptions" :key="item" :value="item">{{ item }}</option>
+            </select>
+          </label>
+          <label>
+            <span>风险等级</span>
+            <select v-model="riskFilter">
+              <option value="all">全部等级</option>
+              <option v-for="item in riskFilterOptions" :key="item" :value="item">{{ item }}</option>
+            </select>
+          </label>
+          <label>
+            <span>区域</span>
+            <select v-model="regionFilter">
+              <option value="all">全部区域</option>
+              <option v-for="item in regionOptions" :key="item" :value="item">{{ item }}</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="quick-filter-row">
+          <button
+            v-for="item in quickFilters"
+            :key="item.key"
+            type="button"
+            class="quick-chip"
+            :class="{ active: quickFilter === item.key }"
+            @click="quickFilter = item.key"
+          >
+            {{ item.label }}
+          </button>
+        </div>
+
+        <div class="table-shell">
+          <table class="project-table">
             <thead>
               <tr>
-                <th>板块</th>
-                <th>项目数</th>
-                <th>风险热度</th>
+                <th>项目编号</th>
+                <th>项目名称</th>
+                <th>所属板块/单位</th>
+                <th>预算金额（亿元）</th>
+                <th>实际支出（亿元）</th>
+                <th>偏差率（%）</th>
+                <th>进度（%）</th>
+                <th>状态</th>
+                <th>风险等级</th>
                 <th>操作</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="s in sectorAgg" :key="s.id" class="cursor-row" @click="openSector(s)">
-                <td>{{ s.name }}</td>
-                <td>{{ s.cnt }}</td>
-                <td><RiskBadge :level="s.riskLevel" /></td>
-                <td><span class="link">下钻</span></td>
+              <tr
+                v-for="item in filteredProjects"
+                :key="item.id"
+                :class="[
+                  'project-row',
+                  rowTone(item),
+                  { active: selectedProjectId === item.id },
+                ]"
+                @click="selectProject(item.id)"
+              >
+                <td>
+                  <span v-if="item.id === defaultProjectCode" class="live-dot"></span>
+                  {{ item.id }}
+                </td>
+                <td class="align-left">
+                  <div class="project-name-cell">{{ item.name }}</div>
+                  <div class="project-row-meta">{{ item.location }} · {{ item.phaseState }}</div>
+                </td>
+                <td class="align-left">{{ item.sectorName }} / {{ item.companyName }}</td>
+                <td>{{ formatYi(item.budgetYi) }}</td>
+                <td :class="{ danger: item.isOverBudget }">{{ formatYi(item.actualYi) }}</td>
+                <td :class="{ danger: item.isOverBudget }">{{ signedNumber(item.deviationRate) }}</td>
+                <td :class="{ warning: item.isLagging }">{{ item.progress }}%</td>
+                <td>
+                  <span class="status-pill" :class="statusClass(item.primaryStatus)">{{ item.primaryStatus }}</span>
+                </td>
+                <td>
+                  <span class="risk-pill" :class="item.riskDisplay.className">{{ item.riskDisplay.label }}</span>
+                </td>
+                <td>
+                  <div class="op-row">
+                    <button type="button" class="op-btn" @click.stop="selectProject(item.id)">查看详情</button>
+                    <button type="button" class="op-btn" @click.stop="focusRiskPath">查看关联</button>
+                    <button type="button" class="op-btn primary" @click.stop="dispatchWorkOrder">派发工单</button>
+                  </div>
+                </td>
+              </tr>
+              <tr v-if="!filteredProjects.length">
+                <td colspan="10" class="empty-cell">当前筛选条件下暂无项目，请切换板块或风险筛选。</td>
               </tr>
             </tbody>
           </table>
         </div>
-      </div>
-
-      <section class="section-gap">
-        <div class="section-head">
-          <div>
-            <h3 class="sub-title">投资项目总览看板</h3>
-            <p class="desc">聚焦总投资计划、已完成投资、项目总数和超预算项目，异常项目在图表中自动标红。</p>
-          </div>
-        </div>
-        <div class="metric-grid">
-          <div v-for="card in overviewCards" :key="card.label" class="metric-card" :class="{ danger: card.danger }">
-            <span class="metric-label">{{ card.label }}</span>
-            <strong class="metric-value">{{ card.value }}</strong>
-            <span class="metric-extra">{{ card.extra }}</span>
-          </div>
-        </div>
-        <div class="row">
-          <EChart class="chart chart-tall" :option="sectorProgressOption" />
-          <div class="table-wrap">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>板块</th>
-                  <th>项目完成率</th>
-                  <th>预算(亿)</th>
-                  <th>实际(亿)</th>
-                  <th>超预算项目</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="s in sectorOverview" :key="s.id" class="cursor-row" @click="openSector(s)">
-                  <td>{{ s.name }}</td>
-                  <td>{{ s.avgProgress }}%</td>
-                  <td>{{ fmtYi(s.totalBudget) }}</td>
-                  <td :class="{ warn: s.totalActual > s.totalBudget }">{{ fmtYi(s.totalActual) }}</td>
-                  <td :class="{ warn: s.overBudgetCount > 0 }">{{ s.overBudgetCount }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
       </section>
-    </div>
 
-    <div v-else-if="step === 1" class="panel block">
-      <h2 class="panel-title">板块：{{ sector?.name }}</h2>
-      <p class="desc">选择子公司继续穿透，保留原有下钻路径。</p>
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>子公司</th>
-            <th>所在地</th>
-            <th>风险</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="c in companiesInSector" :key="c.id" class="cursor-row" @click="openCompany(c)">
-            <td>{{ c.name }}</td>
-            <td>{{ c.city }}</td>
-            <td><RiskBadge :level="c.risk" /></td>
-            <td><span class="link">下钻</span></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div v-else-if="step === 2" class="panel block">
-      <h2 class="panel-title">子公司：{{ company?.name }}</h2>
-      <p class="desc">在保留原表格的基础上补充项目进度、预算偏差和风险等级，点击项目进入详情页。</p>
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>项目</th>
-            <th>预算(亿)</th>
-            <th>实际支出(亿)</th>
-            <th>进度</th>
-            <th>状态</th>
-            <th>风险等级</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="p in projectsOfCompany" :key="p.id" class="cursor-row" @click="openProject(p)">
-            <td>{{ p.name }}</td>
-            <td>{{ fmtYi(p.budgetYi) }}</td>
-            <td :class="{ warn: p.actualYi > p.budgetYi }">{{ fmtYi(p.actualYi) }}</td>
-            <td>{{ p.progress }}%</td>
-            <td :class="{ warn: p.actualYi > p.budgetYi }">{{ p.status }}</td>
-            <td><RiskBadge :level="p.risk" /></td>
-            <td><span class="link">查看详情</span></td>
-          </tr>
-        </tbody>
-      </table>
-
-      <section class="section-gap">
-        <div class="section-head">
+      <aside v-if="!panelCollapsed" class="glass-panel detail-panel">
+        <div class="panel-head compact">
           <div>
-            <h3 class="sub-title">项目详情与下钻</h3>
-            <p class="desc">重点项目支持从列表直接下钻到预算对比、资金趋势、里程碑和关联图谱。</p>
+            <h2 class="panel-title">项目详情与关联图谱区</h2>
+            <p class="panel-sub">右侧面板支持收起，默认加载 P06 的三重风险演示数据。</p>
           </div>
+          <button type="button" class="ghost-btn" @click="panelCollapsed = true">收起面板</button>
         </div>
-        <div class="quick-list">
-          <div v-for="p in projectsOfCompany" :key="`${p.id}-quick`" class="quick-item" @click="openProject(p)">
+
+        <section class="detail-summary-card">
+          <div class="summary-main">
             <div>
-              <div class="quick-title">{{ p.name }}</div>
-              <div class="quick-meta">{{ p.location }} · {{ p.progress }}% · {{ p.milestoneStatus }}</div>
+              <div class="detail-code">{{ selectedProject.id }}</div>
+              <h3 class="detail-name">{{ selectedProject.name }}</h3>
+              <div class="detail-owner">{{ selectedProject.companyName }} · EPC {{ selectedProject.epcName }}</div>
             </div>
-            <div class="quick-side">
-              <span class="quick-num" :class="{ warn: p.actualYi > p.budgetYi }">{{ budgetDeviationText(p) }}</span>
-              <RiskBadge :level="p.risk" />
+            <div class="detail-risk-tags">
+              <span v-for="tag in selectedProject.riskTags" :key="tag" class="tag-chip">{{ tag }}</span>
             </div>
           </div>
-        </div>
-      </section>
-    </div>
+          <div class="summary-grid">
+            <div class="summary-item">
+              <span>预算 / 实际</span>
+              <strong>{{ formatYi(selectedProject.budgetYi) }} / {{ formatYi(selectedProject.actualYi) }} 亿</strong>
+            </div>
+            <div class="summary-item">
+              <span>偏差率</span>
+              <strong class="danger">{{ signedNumber(selectedProject.deviationRate) }}</strong>
+            </div>
+            <div class="summary-item">
+              <span>当前进度</span>
+              <strong :class="{ warning: selectedProject.isLagging }">{{ selectedProject.progress }}%</strong>
+            </div>
+            <div class="summary-item">
+              <span>当前状态</span>
+              <strong>{{ selectedProject.primaryStatus }}</strong>
+            </div>
+            <div class="summary-item">
+              <span>关联交易金额</span>
+              <strong>{{ formatYi(selectedProject.profile.relatedTradeAmountYi) }} 亿</strong>
+            </div>
+            <div class="summary-item">
+              <span>关联交易占比</span>
+              <strong>{{ formatPercent(selectedProject.profile.relatedTradeRatio) }}</strong>
+            </div>
+          </div>
+          <div class="ai-conclusion-card">
+            <span class="ai-kicker">AI 风险研判结论</span>
+            <p>{{ aiConclusion }}</p>
+          </div>
+        </section>
 
-    <div v-else-if="step === 3" class="panel block">
-      <h2 class="panel-title">项目明细：{{ project?.name }}</h2>
-      <div class="badges">
-        <RiskBadge :level="project?.risk" />
-        <span class="pill">阶段：{{ project?.phase }}</span>
-        <span class="pill">进度：{{ projectProfile.progress }}%</span>
-        <span class="pill">关联风险：{{ relatedRiskText }}</span>
+        <section class="graph-panel">
+          <div class="chart-title-row graph-toolbar">
+            <div>
+              <h3>关联交易知识图谱</h3>
+              <span>支持缩放、拖拽、点击节点或边查看明细</span>
+            </div>
+            <div class="graph-actions">
+              <button type="button" class="op-btn" @click="focusRiskPath">聚焦高风险路径</button>
+              <button type="button" class="op-btn" @click="graphSelection = null">恢复概览</button>
+            </div>
+          </div>
+          <KnowledgeGraph
+            :graph-data="selectedGraph"
+            :height="panelCollapsed ? 0 : 360"
+            :highlight-nodes="highlightedGraph.nodes"
+            :highlight-edges="highlightedGraph.edges"
+            @select="handleGraphSelect"
+          />
+          <div class="graph-insight-grid">
+            <div class="graph-insight-card">
+              <span class="insight-label">高风险路径</span>
+              <strong>{{ graphPathText }}</strong>
+              <p>{{ selectedProject.profile.hiddenRelationNote }}</p>
+            </div>
+            <div class="graph-insight-card">
+              <span class="insight-label">点击详情</span>
+              <strong>{{ graphSelectionTitle }}</strong>
+              <p>{{ graphSelectionDetail }}</p>
+            </div>
+          </div>
+        </section>
+      </aside>
+
+      <button v-else type="button" class="glass-panel expand-panel-btn" @click="panelCollapsed = false">
+        <span>展开详情面板</span>
+        <strong>{{ selectedProject.name }}</strong>
+      </button>
+    </section>
+
+    <section class="glass-panel bottom-panel">
+      <div class="panel-head">
+        <div>
+          <h2 class="panel-title">单项目投资趋势与里程碑看板</h2>
+          <p class="panel-sub">完整展示预算与实际趋势、偏差率变化以及关键里程碑执行情况。</p>
+        </div>
+        <div class="panel-tags">
+          <span class="panel-tag danger">偏差超 10% 自动遮罩标红</span>
+          <span class="panel-tag warning">延期节点高亮</span>
+        </div>
       </div>
-
-      <div class="metric-grid">
-        <div class="metric-card">
-          <span class="metric-label">预算 vs 实际</span>
-          <strong class="metric-value">{{ fmtYi(project?.budgetYi) }} / {{ fmtYi(project?.actualYi) }} 亿</strong>
-          <span class="metric-extra">{{ budgetDeviationText(project) }}</span>
+      <div class="bottom-grid">
+        <div class="chart-card bottom-trend-card">
+          <div class="chart-title-row">
+            <h3>预算 vs 实际投资趋势</h3>
+            <span>蓝线预算 / 橙线实际 / 偏差率双轴展示</span>
+          </div>
+          <EChart class="bottom-chart" :option="trendOption" />
         </div>
-        <div class="metric-card" :class="{ danger: projectProfile.overBudgetRate > 0 }">
-          <span class="metric-label">超预算偏差</span>
-          <strong class="metric-value">{{ signedPercent(projectProfile.overBudgetRate) }}</strong>
-          <span class="metric-extra">{{ projectProfile.causeAnalysis }}</span>
-        </div>
-        <div class="metric-card" :class="{ danger: relatedRiskLevel !== 'low' }">
-          <span class="metric-label">关联交易金额 / 占比</span>
-          <strong class="metric-value">{{ fmtYi(projectProfile.relatedTradeAmountYi) }} 亿 / {{ fmtPercent(projectProfile.relatedTradeRatio) }}</strong>
-          <span class="metric-extra">{{ projectProfile.hiddenRelationNote }}</span>
-        </div>
-        <div class="metric-card">
-          <span class="metric-label">里程碑状态</span>
-          <strong class="metric-value">{{ projectProfile.milestoneStatus }}</strong>
-          <span class="metric-extra">{{ projectProfile.location }} · {{ projectProfile.owner }}</span>
+        <div class="chart-card bottom-gantt-card">
+          <div class="chart-title-row">
+            <h3>里程碑进度甘特图</h3>
+            <span>关键节点延期自动标红，hover 可查看原因</span>
+          </div>
+          <EChart class="bottom-chart" :option="ganttOption" />
         </div>
       </div>
+      <div class="bottom-info-bar">
+        <div class="bottom-info">
+          <span class="info-label">超预算原因分析</span>
+          <strong>{{ selectedProject.profile.causeAnalysis }}</strong>
+        </div>
+        <div class="bottom-info">
+          <span class="info-label">进度滞后说明</span>
+          <strong>{{ laggingReason }}</strong>
+        </div>
+        <div class="bottom-info">
+          <span class="info-label">关联交易核查建议</span>
+          <strong>{{ relationAdvice }}</strong>
+        </div>
+        <div class="bottom-actions">
+          <button type="button" class="op-btn primary" :class="{ pulse: pulseDispatch }" @click="dispatchWorkOrder">派发核查工单</button>
+          <button type="button" class="op-btn" @click="router.push('/contract')">查看项目合同</button>
+          <button type="button" class="op-btn" @click="router.push('/funds')">查看资金拨付记录</button>
+        </div>
+      </div>
+    </section>
 
-      <section class="section-gap">
-        <div class="section-head">
-          <div>
-            <h3 class="sub-title">预算对比与资金使用趋势</h3>
-            <p class="desc">展示预算 vs 实际对比图、月度资金使用趋势和关键里程碑节点。</p>
-          </div>
-          <button type="button" class="btn btn-primary" @click="goDocs">进入单据 / 凭证层</button>
-        </div>
-        <div class="row row-equal">
-          <EChart class="chart chart-tall" :option="projectCompareOption" />
-          <EChart class="chart chart-tall" :option="fundTrendOption" />
-        </div>
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>里程碑</th>
-                <th>计划时间</th>
-                <th>实际时间</th>
-                <th>状态</th>
-                <th>说明</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="item in projectProfile.milestones" :key="item.name">
-                <td>{{ item.name }}</td>
-                <td>{{ item.planned }}</td>
-                <td>{{ item.actual }}</td>
-                <td><span class="status-tag" :class="item.status">{{ milestoneLabel(item.status) }}</span></td>
-                <td>{{ item.note }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="section-gap">
-        <div class="section-head">
-          <div>
-            <h3 class="sub-title">关联交易知识图谱</h3>
-            <p class="desc">展示项目主体、承包商和股东之间的关联关系，隐蔽关联方以红色节点高亮，点击节点可高亮关联路径。</p>
-          </div>
-          <RiskBadge :level="relatedRiskLevel" />
-        </div>
-        <div class="row row-equal">
-          <KnowledgeGraph :graph-data="projectGraph" :height="320" />
-          <div class="insight-card">
-            <div class="insight-line">
-              <span class="insight-k">关联交易金额</span>
-              <strong class="insight-v">{{ fmtYi(projectProfile.relatedTradeAmountYi) }} 亿</strong>
-            </div>
-            <div class="insight-line">
-              <span class="insight-k">关联交易占比</span>
-              <strong class="insight-v">{{ fmtPercent(projectProfile.relatedTradeRatio) }}</strong>
-            </div>
-            <div class="insight-line">
-              <span class="insight-k">隐蔽关联方</span>
-              <strong class="insight-v">{{ projectProfile.hiddenRelationCount }} 个</strong>
-            </div>
-            <div class="insight-line">
-              <span class="insight-k">自动计算风险</span>
-              <strong class="insight-v">{{ relatedRiskText }}</strong>
-            </div>
-            <p class="insight-note">{{ projectProfile.hiddenRelationNote }}</p>
-          </div>
-        </div>
-      </section>
-
-      <section class="section-gap">
-        <div class="section-head">
-          <div>
-            <h3 class="sub-title">风险预警卡片</h3>
-            <p class="desc">复用风险标红和工单联动能力，点击可查看或派发核查工单。</p>
-          </div>
-        </div>
-        <div class="alert-grid">
-          <div v-for="alert in projectAlerts" :key="alert.id" class="alert-card" :class="alert.level">
-            <div class="alert-top">
-              <span class="alert-type">{{ alert.type }}</span>
-              <RiskBadge :level="alert.level" />
-            </div>
-            <div class="alert-title">{{ alert.title }}</div>
-            <div class="alert-detail">{{ alert.detail }}</div>
-            <div class="alert-actions">
-              <button type="button" class="btn" @click="openWorkOrders">查看工单</button>
-              <button type="button" class="btn btn-primary" @click="dispatchWorkOrder(alert.workOrderId)">派发核查工单</button>
-            </div>
-          </div>
-          <div v-if="!projectAlerts.length" class="alert-card neutral">
-            <div class="alert-top">
-              <span class="alert-type">运行状态</span>
-              <RiskBadge level="low" />
-            </div>
-            <div class="alert-title">当前项目未触发新增预警</div>
-            <div class="alert-detail">系统仍持续监测预算偏差、关联交易和关键节点变更，异常时可直接生成核查工单。</div>
-            <div class="alert-actions">
-              <button type="button" class="btn" @click="openWorkOrders">查看工单</button>
-            </div>
-          </div>
-        </div>
-      </section>
-    </div>
-
-    <div v-else class="panel block">
-      <h2 class="panel-title">单据与核查工单</h2>
-      <p class="desc">在原有单据层基础上补充关联交易台账和预警工单入口，支持查看 / 派发核查工单。</p>
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>类型</th>
-            <th>编号</th>
-            <th>说明</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>可研批复</td>
-            <td>KY-2024-0098</td>
-            <td>批复投资上限 {{ fmtYi(project?.budgetYi) }} 亿元，当前完成度 {{ projectProfile.progress }}%</td>
-            <td><span class="muted">查看（模拟）</span></td>
-          </tr>
-          <tr>
-            <td>月度完成投资</td>
-            <td>PM-2026-04</td>
-            <td>累计实际 {{ fmtYi(project?.actualYi) }} 亿元，偏差 {{ signedPercent(projectProfile.overBudgetRate) }}</td>
-            <td><span class="muted">查看（模拟）</span></td>
-          </tr>
-          <tr>
-            <td>关联交易台账</td>
-            <td>RT-2026-INV</td>
-            <td>关联交易 {{ fmtYi(projectProfile.relatedTradeAmountYi) }} 亿元，占比 {{ fmtPercent(projectProfile.relatedTradeRatio) }}</td>
-            <td><span class="muted">查看（模拟）</span></td>
-          </tr>
-          <tr
-            v-for="alert in projectAlerts"
-            :key="`${alert.id}-doc`"
-            class="cursor-row"
-            @click="openWorkOrders"
-          >
-            <td>核查工单</td>
-            <td>{{ alert.workOrderId || '待生成' }}</td>
-            <td>{{ alert.title }}</td>
-            <td><span class="link">打开工单列表</span></td>
-          </tr>
-          <tr v-if="!projectAlerts.length" class="cursor-row" @click="openWorkOrders">
-            <td>核查工单</td>
-            <td>{{ fallbackWorkOrderId }}</td>
-            <td>投资执行常规复核</td>
-            <td><span class="link">打开工单列表</span></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    <transition name="toast-fade">
+      <div v-if="toastVisible" class="risk-toast">
+        <span class="toast-dot"></span>
+        <span>{{ toastMessage }}</span>
+      </div>
+    </transition>
   </div>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import DrillStepBar from '@/components/DrillStepBar.vue'
 import EChart from '@/components/EChart.vue'
-import RiskBadge from '@/components/RiskBadge.vue'
 import KnowledgeGraph from '@/components/KnowledgeGraph.vue'
 import {
   SECTORS,
@@ -346,652 +381,1710 @@ import {
   INVESTMENT_PROJECTS,
   INVESTMENT_PROJECT_PROFILES,
   INVESTMENT_RELATION_GRAPHS,
-  GRAPH_INVESTMENT,
-  WORK_ORDERS,
-  sectorById,
-  companyById,
 } from '@/mock/index.js'
 
 const router = useRouter()
+const scenarioTabs = ['全链穿透', '超预算监测', '关联交易识别']
+const activeScenario = ref(scenarioTabs[0])
+const currentTime = ref(formatNow())
+const refreshText = ref('数据已刷新')
+const panelCollapsed = ref(false)
+const selectedProjectId = ref('P06')
+const graphSelection = ref(null)
+const toastMessage = ref('')
+const toastVisible = ref(false)
+const pulseDispatch = ref(false)
+const graphFocusTick = ref(0)
+const kpiProgress = ref(0)
 
-const steps = [
-  { key: 'g0', label: '集团总览' },
-  { key: 'g1', label: '业务板块' },
-  { key: 'g2', label: '子公司' },
-  { key: 'g3', label: '项目明细' },
-  { key: 'g4', label: '单据/工单' },
+const sectorFilter = ref('all')
+const statusFilter = ref('all')
+const riskFilter = ref('all')
+const regionFilter = ref('all')
+const quickFilter = ref('all')
+
+const defaultProjectCode = 'P06'
+const clockTimer = ref(null)
+const kpiTimer = ref(null)
+const toastTimer = ref(null)
+const demoTimers = []
+
+const riskMetaMap = {
+  critical: { label: '高风险', color: '#f53f3f', className: 'critical' },
+  high: { label: '中风险', color: '#ff8800', className: 'high' },
+  medium: { label: '关注', color: '#facc16', className: 'medium' },
+  low: { label: '正常', color: '#22c55e', className: 'low' },
+}
+
+const statusFilterOptions = ['在建', '投产', '超预算', '滞后', '正常', '预警']
+const riskFilterOptions = ['高风险', '中风险', '关注', '正常']
+const quickFilters = [
+  { key: 'all', label: '全部项目' },
+  { key: 'overBudget', label: '一键查看超预算' },
+  { key: 'lagging', label: '一键查看进度滞后' },
+  { key: 'related', label: '一键查看关联交易' },
 ]
 
-const riskRank = { critical: 4, high: 3, medium: 2, low: 1 }
+const summaryCards = [
+  {
+    key: 'plan',
+    label: '年度投资计划总额',
+    target: 500,
+    unit: '亿元',
+    color: '#06b6d4',
+    status: 'normal',
+    statusText: '战略预算',
+    yoy: '+8.6%',
+    qoq: '+2.1%',
+    trend: [48, 54, 58, 62, 65, 72],
+  },
+  {
+    key: 'actual',
+    label: '已完成投资',
+    target: 328,
+    unit: '亿元',
+    color: '#0ea5e9',
+    status: 'normal',
+    statusText: '执行平稳',
+    yoy: '+6.4%',
+    qoq: '+1.7%',
+    trend: [24, 38, 52, 66, 74, 86],
+  },
+  {
+    key: 'projectCount',
+    label: '在投项目总数',
+    target: 42,
+    unit: '个',
+    color: '#38bdf8',
+    status: 'normal',
+    statusText: '项目在管',
+    yoy: '+4.8%',
+    qoq: '+0.9%',
+    trend: [12, 16, 18, 24, 31, 42],
+  },
+  {
+    key: 'overBudget',
+    label: '超预算项目数',
+    target: 7,
+    unit: '个',
+    color: '#f53f3f',
+    status: 'critical',
+    statusText: '红色高亮',
+    yoy: '+2.0%',
+    qoq: '+1.0%',
+    trend: [2, 3, 4, 5, 6, 7],
+  },
+  {
+    key: 'lagging',
+    label: '进度滞后项目数',
+    target: 5,
+    unit: '个',
+    color: '#ff8800',
+    status: 'high',
+    statusText: '橙色预警',
+    yoy: '+1.5%',
+    qoq: '+0.6%',
+    trend: [1, 1, 2, 3, 4, 5],
+  },
+  {
+    key: 'related',
+    label: '关联交易高风险项目',
+    target: 3,
+    unit: '个',
+    color: '#facc16',
+    status: 'medium',
+    statusText: '黄色提示',
+    yoy: '+0.8%',
+    qoq: '+0.5%',
+    trend: [1, 1, 1, 2, 2, 3],
+  },
+]
 
-const step = ref(0)
-const sectorId = ref(null)
-const companyId = ref(null)
-const projectId = ref(null)
+const projects = computed(() => INVESTMENT_PROJECTS.map((project) => buildProject(project)))
+const regionOptions = computed(() => [...new Set(projects.value.map((item) => item.region))])
 
-const projects = INVESTMENT_PROJECTS
-
-const projectProfiles = computed(() =>
-  projects.map((p) => {
-    const profile = INVESTMENT_PROJECT_PROFILES[p.id] || buildFallbackProfile(p)
-    return { ...p, ...profile }
+const sectorSummary = computed(() =>
+  SECTORS.map((sector) => {
+    const list = projects.value.filter((item) => item.sectorId === sector.id)
+    const budget = sumBy(list, 'budgetYi')
+    const actual = sumBy(list, 'actualYi')
+    const overBudgetCount = list.filter((item) => item.isOverBudget).length
+    const laggingCount = list.filter((item) => item.isLagging).length
+    const normalCount = list.filter((item) => item.primaryStatus === '正常').length
+    return {
+      ...sector,
+      budget,
+      actual,
+      overBudgetCount,
+      laggingCount,
+      normalCount,
+      progressRate: budget ? Number(((actual / budget) * 100).toFixed(1)) : 0,
+      deviationRate: budget ? Number((((actual - budget) / budget) * 100).toFixed(1)) : 0,
+    }
   })
 )
 
-const sectorAgg = computed(() =>
-  SECTORS.map((s) => {
-    const list = projects.filter((p) => p.sectorId === s.id)
-    const cnt = list.length
-    const riskLevel = cnt ? list.map((p) => p.risk).reduce((a, b) => (riskRank[a] > riskRank[b] ? a : b)) : 'low'
-    return { ...s, cnt, riskLevel }
-  })
+const matrixStatusColumns = [
+  { key: 'construct', label: '在建' },
+  { key: 'operation', label: '投产' },
+  { key: 'overBudget', label: '超预算' },
+  { key: 'lagging', label: '滞后' },
+  { key: 'normal', label: '正常' },
+]
+
+const matrixDemoCell = ref({ sectorId: 's3', statusKey: 'overBudget' })
+
+const matrixCells = computed(() =>
+  SECTORS.flatMap((sector, rowIndex) =>
+    matrixStatusColumns.map((status, columnIndex) => {
+      const list = projects.value.filter((item) => item.sectorId === sector.id)
+      const value = list.filter((item) => matchMatrixStatus(item, status.key)).length
+      const isDemo = matrixDemoCell.value.sectorId === sector.id && matrixDemoCell.value.statusKey === status.key
+      const isRisk = status.key === 'overBudget' && value > 0
+      return {
+        value: [columnIndex, rowIndex, value],
+        meta: { sectorId: sector.id, statusKey: status.key },
+        itemStyle: {
+          borderRadius: 8,
+          borderColor: isDemo ? '#f53f3f' : 'rgba(14, 165, 233, 0.14)',
+          borderWidth: isDemo ? 2 : 1,
+          shadowBlur: isDemo ? 22 : 8,
+          shadowColor: isDemo ? 'rgba(245,63,63,0.55)' : isRisk ? 'rgba(245,63,63,0.28)' : 'rgba(14,165,233,0.22)',
+        },
+      }
+    })
+  )
 )
 
-const sectorOverview = computed(() =>
-  SECTORS.map((s) => {
-    const list = projectProfiles.value.filter((p) => p.sectorId === s.id)
-    const totalBudget = sumBy(list, 'budgetYi')
-    const totalActual = sumBy(list, 'actualYi')
-    const avgProgress = average(list.map((p) => p.progress))
-    const overBudgetCount = list.filter((p) => p.actualYi > p.budgetYi).length
-    const riskLevel = list.length ? list.map((p) => p.risk).reduce((a, b) => (riskRank[a] > riskRank[b] ? a : b)) : 'low'
-    return { ...s, totalBudget, totalActual, avgProgress, overBudgetCount, riskLevel }
-  }).filter((s) => s.totalBudget > 0)
-)
-
-const overviewCards = computed(() => {
-  const totalBudget = sumBy(projects, 'budgetYi')
-  const totalActual = sumBy(projects, 'actualYi')
-  const overBudgetCount = projects.filter((p) => p.actualYi > p.budgetYi).length
-  return [
-    { label: '总投资计划', value: `${fmtYi(totalBudget)} 亿`, extra: '集团投资计划口径', danger: false },
-    { label: '已完成投资', value: `${fmtYi(totalActual)} 亿`, extra: `完成率 ${fmtPercent((totalActual / totalBudget) * 100)}`, danger: false },
-    { label: '项目总数', value: `${projects.length} 个`, extra: '覆盖当前演示子集', danger: false },
-    { label: '超预算项目数', value: `${overBudgetCount} 个`, extra: '超预算项目已标红', danger: overBudgetCount > 0 },
-  ]
-})
-
-const sector = computed(() => sectorById(sectorId.value))
-const company = computed(() => companyById(companyId.value))
-const project = computed(() => projects.find((p) => p.id === projectId.value) || projects[0])
-const projectProfile = computed(() => INVESTMENT_PROJECT_PROFILES[project.value.id] || buildFallbackProfile(project.value))
-const projectGraph = computed(() => INVESTMENT_RELATION_GRAPHS[project.value.id] || GRAPH_INVESTMENT)
-
-const companiesInSector = computed(() => COMPANIES.filter((c) => c.sectorId === sectorId.value))
-const projectsOfCompany = computed(() =>
-  projectProfiles.value.filter((p) => p.companyId === companyId.value)
-)
-
-const relatedRiskLevel = computed(() => getRelatedRiskLevel(projectProfile.value))
-const relatedRiskText = computed(() => riskText(relatedRiskLevel.value))
-const projectAlerts = computed(() => projectProfile.value.alerts || [])
-const fallbackWorkOrderId = computed(() => {
-  const first = WORK_ORDERS.find((item) => item.riskId === 'R01')
-  return first?.id || 'WO-2026-0037'
-})
-
-const chart0 = computed(() => ({
+const matrixHeatmapOption = computed(() => ({
   backgroundColor: 'transparent',
-  tooltip: { trigger: 'axis' },
-  legend: { top: 0, textStyle: { color: '#8ba3c7' } },
-  grid: { left: 40, right: 8, top: 36, bottom: 40 },
+  tooltip: {
+    formatter: (params) => {
+      const sectorName = SECTORS[params.data.value[1]]?.name || '-'
+      const statusName = matrixStatusColumns[params.data.value[0]]?.label || '-'
+      return `${sectorName}<br/>${statusName}：${params.data.value[2]} 个项目`
+    },
+  },
+  grid: { left: 100, right: 20, top: 24, bottom: 24 },
   xAxis: {
     type: 'category',
-    data: projects.map((p) => shortName(p.name)),
-    axisLabel: { color: '#8ba3c7', rotate: 25 },
+    data: matrixStatusColumns.map((item) => item.label),
+    axisLine: { lineStyle: { color: 'rgba(125, 211, 252, 0.24)' } },
+    axisLabel: { color: '#c9ecff', fontSize: 12 },
+    splitArea: { show: true, areaStyle: { color: ['rgba(3, 16, 31, 0.14)', 'rgba(3, 16, 31, 0.2)'] } },
   },
   yAxis: {
-    type: 'value',
-    axisLabel: { color: '#8ba3c7' },
-    splitLine: { lineStyle: { color: 'rgba(59,130,246,0.12)' } },
+    type: 'category',
+    data: SECTORS.map((item) => item.name),
+    axisLine: { lineStyle: { color: 'rgba(125, 211, 252, 0.24)' } },
+    axisLabel: { color: '#c9ecff', fontSize: 12 },
+    splitArea: { show: true, areaStyle: { color: ['rgba(3, 16, 31, 0.06)', 'rgba(3, 16, 31, 0.12)'] } },
+  },
+  visualMap: {
+    min: 0,
+    max: Math.max(...matrixCells.value.map((item) => item.value[2]), 1),
+    show: false,
+    inRange: {
+      color: ['#082544', '#0b466f', '#0ea5e9', '#ff8800', '#f53f3f'],
+    },
   },
   series: [
     {
-      name: '预算',
+      type: 'heatmap',
+      data: matrixCells.value,
+      label: { show: true, color: '#f8fdff', fontWeight: 700 },
+      emphasis: {
+        itemStyle: {
+          shadowBlur: 24,
+          shadowColor: 'rgba(14, 165, 233, 0.45)',
+        },
+      },
+    },
+  ],
+}))
+
+const sectorBarOption = computed(() => ({
+  backgroundColor: 'transparent',
+  tooltip: { trigger: 'axis' },
+  legend: { top: 0, textStyle: { color: '#bfe9ff' } },
+  grid: { left: 48, right: 16, top: 40, bottom: 28 },
+  xAxis: {
+    type: 'category',
+    data: sectorSummary.value.map((item) => item.name),
+    axisLabel: { color: '#c9ecff', interval: 0 },
+    axisLine: { lineStyle: { color: 'rgba(125, 211, 252, 0.24)' } },
+  },
+  yAxis: [
+    {
+      type: 'value',
+      name: '金额（亿）',
+      axisLabel: { color: '#95c8e2' },
+      splitLine: { lineStyle: { color: 'rgba(14,165,233,0.12)' } },
+    },
+    {
+      type: 'value',
+      name: '偏差率',
+      axisLabel: { color: '#95c8e2', formatter: '{value}%' },
+      splitLine: { show: false },
+    },
+  ],
+  series: [
+    {
+      name: '计划',
       type: 'bar',
-      data: projects.map((p) => p.budgetYi),
-      itemStyle: { color: '#3b82f6' },
+      barMaxWidth: 24,
+      data: sectorSummary.value.map((item) => ({ value: item.budget, sectorId: item.id })),
+      itemStyle: { color: 'rgba(14, 165, 233, 0.75)', borderRadius: [6, 6, 0, 0] },
     },
     {
       name: '实际',
       type: 'bar',
-      data: projects.map((p) => ({
-        value: p.actualYi,
-        itemStyle: { color: p.actualYi > p.budgetYi ? '#ef4444' : '#22c55e' },
+      barMaxWidth: 24,
+      data: sectorSummary.value.map((item) => ({
+        value: item.actual,
+        sectorId: item.id,
+        itemStyle: {
+          color: item.overBudgetCount > 0 ? '#f53f3f' : '#06b6d4',
+          borderRadius: [6, 6, 0, 0],
+        },
       })),
+    },
+    {
+      name: '偏差率',
+      type: 'line',
+      yAxisIndex: 1,
+      smooth: true,
+      symbolSize: 8,
+      data: sectorSummary.value.map((item) => ({ value: item.deviationRate, sectorId: item.id })),
+      lineStyle: { color: '#facc16', width: 2 },
+      itemStyle: { color: '#facc16' },
     },
   ],
 }))
 
-const sectorProgressOption = computed(() => ({
-  backgroundColor: 'transparent',
-  tooltip: { trigger: 'axis' },
-  grid: { left: 48, right: 16, top: 24, bottom: 36 },
-  xAxis: {
-    type: 'category',
-    data: sectorOverview.value.map((item) => item.name),
-    axisLabel: { color: '#8ba3c7', interval: 0 },
-  },
-  yAxis: {
-    type: 'value',
-    max: 100,
-    axisLabel: { color: '#8ba3c7', formatter: '{value}%' },
-    splitLine: { lineStyle: { color: 'rgba(59,130,246,0.12)' } },
-  },
-  series: [
-    {
-      name: '项目完成率',
-      type: 'bar',
-      barWidth: 34,
-      data: sectorOverview.value.map((item) => ({
-        value: item.avgProgress,
-        itemStyle: { color: item.overBudgetCount > 0 ? '#ef4444' : '#22c55e' },
-      })),
-    },
-  ],
-}))
+const filteredProjects = computed(() =>
+  projects.value.filter((item) => {
+    if (sectorFilter.value !== 'all' && item.sectorId !== sectorFilter.value) return false
+    if (statusFilter.value !== 'all') {
+      if (statusFilter.value === '在建' || statusFilter.value === '投产') {
+        if (item.phaseState !== statusFilter.value) return false
+      } else if (item.primaryStatus !== statusFilter.value) {
+        return false
+      }
+    }
+    if (riskFilter.value !== 'all' && item.riskDisplay.label !== riskFilter.value) return false
+    if (regionFilter.value !== 'all' && item.region !== regionFilter.value) return false
+    if (quickFilter.value === 'overBudget' && !item.isOverBudget) return false
+    if (quickFilter.value === 'lagging' && !item.isLagging) return false
+    if (quickFilter.value === 'related' && !item.hasRelatedRisk) return false
+    return true
+  })
+)
 
-const projectCompareOption = computed(() => ({
-  backgroundColor: 'transparent',
-  tooltip: { trigger: 'axis' },
-  grid: { left: 40, right: 20, top: 30, bottom: 28 },
-  xAxis: {
-    type: 'category',
-    data: ['预算', '实际', '关联交易'],
-    axisLabel: { color: '#8ba3c7' },
+watch(
+  filteredProjects,
+  (list) => {
+    if (!list.length) return
+    if (!list.some((item) => item.id === selectedProjectId.value)) {
+      selectedProjectId.value = list[0].id
+    }
   },
-  yAxis: {
-    type: 'value',
-    axisLabel: { color: '#8ba3c7', formatter: '{value}亿' },
-    splitLine: { lineStyle: { color: 'rgba(59,130,246,0.12)' } },
-  },
-  series: [
-    {
-      type: 'bar',
-      barWidth: 34,
-      data: [
-        { value: project.value.budgetYi, itemStyle: { color: '#3b82f6' } },
-        { value: project.value.actualYi, itemStyle: { color: project.value.actualYi > project.value.budgetYi ? '#ef4444' : '#22c55e' } },
-        { value: projectProfile.value.relatedTradeAmountYi, itemStyle: { color: '#f97316' } },
+  { immediate: true }
+)
+
+const selectedProject = computed(() =>
+  projects.value.find((item) => item.id === selectedProjectId.value) || projects.value[0]
+)
+const selectedGraph = computed(() => INVESTMENT_RELATION_GRAPHS[selectedProject.value.id] || { nodes: [], edges: [] })
+
+const graphFocusPath = computed(() => {
+  const projectId = selectedProject.value.id
+  if (projectId === 'P06') {
+    return {
+      nodes: ['i62', 'i63', 'i64', 'i67', 'i66'],
+      edges: [
+        { source: 'i62', target: 'i63' },
+        { source: 'i63', target: 'i64' },
+        { source: 'i66', target: 'i67' },
+        { source: 'i67', target: 'i64' },
+        { source: 'i66', target: 'i62' },
       ],
-      label: { show: true, position: 'top', color: '#e8f1ff' },
-    },
-  ],
-}))
+      text: '西北新能源投资公司 → 陇东风电项目 SPV → 宁陇 EPC 联合体 → 刘某控制平台 → 少数股东刘某',
+    }
+  }
+  const highlightNodes = selectedGraph.value.nodes
+    .filter((node) => ['related', 'person'].includes(node.type))
+    .map((node) => node.id)
+  const highlightEdges = selectedGraph.value.edges.filter((edge) => highlightNodes.includes(edge.source) || highlightNodes.includes(edge.target))
+  return {
+    nodes: [...new Set([...highlightNodes, ...highlightEdges.flatMap((edge) => [edge.source, edge.target])])],
+    edges: highlightEdges.map((edge) => ({ source: edge.source, target: edge.target })),
+    text: selectedProject.value.profile.hiddenRelationNote,
+  }
+})
 
-const fundTrendOption = computed(() => ({
+const highlightedGraph = computed(() => {
+  graphFocusTick.value
+  return {
+    nodes: [...graphFocusPath.value.nodes],
+    edges: graphFocusPath.value.edges.map((edge) => ({ ...edge })),
+  }
+})
+
+const aiConclusion = computed(() => {
+  const finding = []
+  if (selectedProject.value.isOverBudget) {
+    finding.push(`该项目存在超预算 ${formatPercent(selectedProject.value.deviationRate)}`)
+  }
+  if (selectedProject.value.isLagging) {
+    finding.push('关键节点延期，当前进度较计划滞后约 3 个月')
+  }
+  if (selectedProject.value.hasRelatedRisk) {
+    finding.push('EPC 承包商与下属企业股东存在隐蔽关联关系')
+  }
+  if (!finding.length) {
+    return '项目整体执行平稳，当前未识别重大异常，建议保持月度投资偏差与关联交易持续监测。'
+  }
+  return `${finding.join('、')}，建议立即启动专项核查并同步复核投资签证、资金拨付与股权穿透底稿。`
+})
+
+const graphNodeMap = computed(() => new Map(selectedGraph.value.nodes.map((node) => [node.id, node.label])))
+const graphSelectionTitle = computed(() => {
+  if (!graphSelection.value) return '默认高风险路径'
+  if (graphSelection.value.type === 'node') return graphSelection.value.data.label || '图谱节点'
+  if (graphSelection.value.type === 'edge') {
+    const source = graphNodeMap.value.get(graphSelection.value.data.source) || graphSelection.value.data.source
+    const target = graphNodeMap.value.get(graphSelection.value.data.target) || graphSelection.value.data.target
+    return `${source} → ${target}`
+  }
+  return '风险概览'
+})
+const graphSelectionDetail = computed(() => {
+  if (!graphSelection.value) {
+    return `系统已自动锁定隐蔽关联路径，关联交易金额 ${formatYi(selectedProject.value.profile.relatedTradeAmountYi)} 亿元，占项目累计支出 ${formatPercent(selectedProject.value.profile.relatedTradeRatio)}。`
+  }
+  if (graphSelection.value.type === 'node') {
+    return `${graphSelection.value.data.label}：节点类型为 ${nodeTypeText(graphSelection.value.data.type)}，可继续沿上下游关系核查出资、控股或分包链路。`
+  }
+  return `${graphSelection.value.data.label}，可进一步核查持股比例、交易金额与同一控制关系。`
+})
+const graphPathText = computed(() => graphFocusPath.value.text)
+
+const laggingReason = computed(() => {
+  const delays = selectedProject.value.profile.milestones.filter((item) => item.status === 'delay')
+  if (!delays.length) return '当前关键节点整体按计划推进。'
+  return delays.map((item) => `${item.name}${item.note ? `：${item.note}` : ''}`).join('；')
+})
+const relationAdvice = computed(() => {
+  if (!selectedProject.value.hasRelatedRisk) return '保持对供应商集中度和股权变更的常态化扫描。'
+  return '建议核查 EPC 承包商、设备代理商与子公司股东的交叉持股关系，并同步复核关联交易定价依据。'
+})
+
+const trendOption = computed(() => {
+  const months = selectedProject.value.profile.fundTrend.map((item) => item.month)
+  const deviationSeries = selectedProject.value.profile.fundTrend.map((item) => Number((((item.actual - item.budget) / item.budget) * 100).toFixed(1)))
+  const markAreaData = []
+  months.forEach((month, index) => {
+    if (Math.abs(deviationSeries[index]) <= 10) return
+    const nextMonth = months[Math.min(index + 1, months.length - 1)]
+    markAreaData.push([{ xAxis: month }, { xAxis: nextMonth }])
+  })
+  return {
+    backgroundColor: 'transparent',
+    tooltip: { trigger: 'axis' },
+    legend: { top: 0, textStyle: { color: '#d2f0ff' } },
+    grid: { left: 48, right: 40, top: 36, bottom: 28 },
+    xAxis: {
+      type: 'category',
+      data: months,
+      axisLine: { lineStyle: { color: 'rgba(125, 211, 252, 0.24)' } },
+      axisLabel: { color: '#c9ecff' },
+    },
+    yAxis: [
+      {
+        type: 'value',
+        name: '累计投资（亿）',
+        axisLabel: { color: '#9ed5ef' },
+        splitLine: { lineStyle: { color: 'rgba(14,165,233,0.12)' } },
+      },
+      {
+        type: 'value',
+        name: '偏差率',
+        axisLabel: { color: '#9ed5ef', formatter: '{value}%' },
+        splitLine: { show: false },
+      },
+    ],
+    series: [
+      {
+        name: '预算计划',
+        type: 'line',
+        smooth: true,
+        symbolSize: 9,
+        data: selectedProject.value.profile.fundTrend.map((item) => item.budget),
+        lineStyle: { color: '#0ea5e9', width: 3 },
+        itemStyle: { color: '#0ea5e9' },
+      },
+      {
+        name: '实际支出',
+        type: 'line',
+        smooth: true,
+        symbolSize: 9,
+        data: selectedProject.value.profile.fundTrend.map((item) => item.actual),
+        lineStyle: { color: '#ff8800', width: 3 },
+        itemStyle: { color: '#ff8800' },
+        markArea: markAreaData.length
+          ? {
+              itemStyle: { color: 'rgba(245, 63, 63, 0.16)' },
+              data: markAreaData,
+            }
+          : undefined,
+      },
+      {
+        name: '偏差率',
+        type: 'bar',
+        yAxisIndex: 1,
+        barMaxWidth: 18,
+        data: deviationSeries.map((value) => ({
+          value,
+          itemStyle: { color: Math.abs(value) > 10 ? '#f53f3f' : 'rgba(250, 204, 22, 0.8)' },
+        })),
+      },
+    ],
+  }
+})
+
+const ganttRows = computed(() => {
+  const today = Date.now()
+  return selectedProject.value.profile.milestones.map((item) => {
+    const planned = toTimestamp(item.planned)
+    const end = item.actual && item.actual !== '-'
+      ? Math.max(toTimestamp(item.actual), planned + 4 * DAY)
+      : Math.max(today, planned + 12 * DAY)
+    return {
+      name: item.name,
+      value: [item.name, planned, end],
+      itemStyle: { color: milestoneColor(item.status) },
+      status: milestoneStatusText(item.status),
+      note: item.note,
+      delayDays: calcDelayDays(item.planned, item.actual, item.status),
+    }
+  })
+})
+
+const ganttMin = computed(() => Math.min(...ganttRows.value.map((item) => item.value[1]), Date.now() - 15 * DAY))
+const ganttMax = computed(() => Math.max(...ganttRows.value.map((item) => item.value[2]), Date.now() + 20 * DAY))
+
+const ganttOption = computed(() => ({
   backgroundColor: 'transparent',
-  tooltip: { trigger: 'axis' },
-  legend: { top: 0, textStyle: { color: '#8ba3c7' } },
-  grid: { left: 42, right: 12, top: 36, bottom: 24 },
+  tooltip: {
+    formatter: (params) => {
+      const data = params.data
+      return `${data.value[0]}<br/>状态：${data.status}<br/>说明：${data.note}<br/>延期天数：${Math.max(data.delayDays, 0)} 天`
+    },
+  },
+  grid: { left: 92, right: 22, top: 18, bottom: 32 },
   xAxis: {
-    type: 'category',
-    data: projectProfile.value.fundTrend.map((item) => item.month),
-    axisLabel: { color: '#8ba3c7' },
+    type: 'time',
+    min: ganttMin.value,
+    max: ganttMax.value,
+    axisLabel: {
+      color: '#c9ecff',
+      formatter: (value) => formatMonthDay(value),
+    },
+    splitLine: { lineStyle: { color: 'rgba(14,165,233,0.12)' } },
+    axisLine: { lineStyle: { color: 'rgba(125, 211, 252, 0.24)' } },
   },
   yAxis: {
-    type: 'value',
-    axisLabel: { color: '#8ba3c7', formatter: '{value}亿' },
-    splitLine: { lineStyle: { color: 'rgba(59,130,246,0.12)' } },
+    type: 'category',
+    data: selectedProject.value.profile.milestones.map((item) => item.name),
+    axisLabel: { color: '#d7f1ff' },
+    axisLine: { lineStyle: { color: 'rgba(125, 211, 252, 0.24)' } },
   },
   series: [
     {
-      name: '预算累计',
-      type: 'line',
-      smooth: true,
-      data: projectProfile.value.fundTrend.map((item) => item.budget),
-      itemStyle: { color: '#3b82f6' },
-      areaStyle: { color: 'rgba(59,130,246,0.12)' },
-    },
-    {
-      name: '实际累计',
-      type: 'line',
-      smooth: true,
-      data: projectProfile.value.fundTrend.map((item) => item.actual),
-      itemStyle: { color: projectProfile.value.overBudgetRate > 0 ? '#ef4444' : '#22c55e' },
-      areaStyle: { color: projectProfile.value.overBudgetRate > 0 ? 'rgba(239,68,68,0.12)' : 'rgba(34,197,94,0.12)' },
+      type: 'custom',
+      renderItem(params, api) {
+        const category = api.value(0)
+        const start = api.coord([api.value(1), category])
+        const end = api.coord([api.value(2), category])
+        const height = api.size([0, 1])[1] * 0.42
+        return {
+          type: 'rect',
+          shape: {
+            x: start[0],
+            y: start[1] - height / 2,
+            width: Math.max(10, end[0] - start[0]),
+            height,
+          },
+          style: api.style({
+            shadowBlur: 16,
+            shadowColor: api.visual('color'),
+          }),
+        }
+      },
+      encode: { x: [1, 2], y: 0 },
+      data: ganttRows.value,
     },
   ],
 }))
 
-function buildFallbackProfile(p) {
-  const progress = Math.max(35, Math.min(98, Math.round((p.actualYi / p.budgetYi) * 60)))
-  return {
-    progress,
-    location: '演示区域',
-    owner: companyById(p.companyId)?.name || '项目公司',
-    board: sectorById(p.sectorId)?.name || '业务板块',
-    milestoneStatus: '按计划推进',
-    overBudgetRate: Number((((p.actualYi - p.budgetYi) / p.budgetYi) * 100).toFixed(1)),
-    causeAnalysis: p.actualYi > p.budgetYi ? '阶段性支出高于计划，建议继续核查工程签证与采购清单。' : '项目执行基本平稳。',
-    relatedTradeAmountYi: Number((p.actualYi * 0.12).toFixed(1)),
-    relatedTradeRatio: Number(((p.actualYi * 0.12 / p.actualYi) * 100).toFixed(1)),
-    hiddenRelationCount: p.risk === 'high' || p.risk === 'critical' ? 1 : 0,
-    hiddenRelationNote: p.risk === 'high' || p.risk === 'critical' ? '存在需复核的关联交易链路。' : '未发现明显隐蔽关联。',
-    fundTrend: [
-      { month: '2026-01', budget: Number((p.budgetYi * 0.3).toFixed(1)), actual: Number((p.actualYi * 0.3).toFixed(1)) },
-      { month: '2026-02', budget: Number((p.budgetYi * 0.55).toFixed(1)), actual: Number((p.actualYi * 0.57).toFixed(1)) },
-      { month: '2026-03', budget: Number((p.budgetYi * 0.78).toFixed(1)), actual: Number((p.actualYi * 0.82).toFixed(1)) },
-      { month: '2026-04', budget: p.budgetYi, actual: p.actualYi },
-    ],
-    milestones: [
-      { name: '立项批复', planned: '2026-01-10', actual: '2026-01-10', status: 'done', note: '已完成' },
-      { name: '开工建设', planned: '2026-02-15', actual: '2026-02-20', status: 'running', note: '持续推进' },
-      { name: '阶段验收', planned: '2026-06-30', actual: '-', status: 'running', note: '待完成' },
-    ],
-    alerts: [],
+const matrixChartEvents = {
+  click: (params) => {
+    const meta = params.data?.meta
+    if (!meta) return
+    sectorFilter.value = meta.sectorId
+    statusFilter.value = matrixStatusToFilter(meta.statusKey)
+    panelCollapsed.value = false
+  },
+}
+
+const sectorBarEvents = {
+  click: (params) => {
+    const sectorId = params.data?.sectorId || sectorSummary.value[params.dataIndex]?.id
+    if (!sectorId) return
+    sectorFilter.value = sectorId
+    panelCollapsed.value = false
+  },
+}
+
+function activateScenario(tab) {
+  activeScenario.value = tab
+  if (tab === '超预算监测') {
+    quickFilter.value = 'overBudget'
+    statusFilter.value = '超预算'
+  } else if (tab === '关联交易识别') {
+    quickFilter.value = 'related'
+    statusFilter.value = 'all'
+  } else {
+    quickFilter.value = 'all'
+    statusFilter.value = 'all'
   }
 }
 
-function openSector(s) {
-  sectorId.value = s.id
-  step.value = 1
+function buildProject(project) {
+  const profile = INVESTMENT_PROJECT_PROFILES[project.id] || {
+    progress: 50,
+    location: '演示区域',
+    owner: '-',
+    board: '-',
+    milestoneStatus: '-',
+    overBudgetRate: 0,
+    causeAnalysis: '暂无补充说明。',
+    relatedTradeAmountYi: 0,
+    relatedTradeRatio: 0,
+    hiddenRelationCount: 0,
+    hiddenRelationNote: '暂无隐蔽关联说明。',
+    fundTrend: [],
+    milestones: [],
+    alerts: [],
+  }
+  const company = COMPANIES.find((item) => item.id === project.companyId)
+  const sector = SECTORS.find((item) => item.id === project.sectorId)
+  const deviationRate = Number((((project.actualYi - project.budgetYi) / project.budgetYi) * 100).toFixed(1))
+  const isOverBudget = deviationRate > 0
+  const isLagging = profile.milestones.some((item) => item.status === 'delay') || project.id === 'P06'
+  const hasRelatedRisk = profile.relatedTradeRatio >= 20 || profile.hiddenRelationCount > 0
+  const phaseState = project.phase === '投产' || profile.progress >= 90 ? '投产' : '在建'
+  const primaryStatus = isOverBudget ? '超预算' : isLagging ? '滞后' : hasRelatedRisk ? '预警' : '正常'
+  const epcName = buildEpcName(project.id)
+  const riskTags = []
+  if (isOverBudget) riskTags.push(`超预算 ${formatPercent(deviationRate)}`)
+  if (isLagging) riskTags.push('进度滞后')
+  if (hasRelatedRisk) riskTags.push('关联交易')
+  if (!riskTags.length) riskTags.push('执行正常')
+  return {
+    ...project,
+    profile,
+    companyName: company?.name || profile.owner || '-',
+    sectorName: sector?.name || profile.board || '-',
+    progress: profile.progress,
+    location: profile.location,
+    region: normalizeRegion(profile.location),
+    deviationRate,
+    isOverBudget,
+    isLagging,
+    hasRelatedRisk,
+    phaseState,
+    primaryStatus,
+    epcName,
+    riskDisplay: riskMetaMap[project.risk] || riskMetaMap.low,
+    riskTags,
+  }
 }
 
-function openCompany(c) {
-  companyId.value = c.id
-  step.value = 2
+function selectProject(projectId) {
+  selectedProjectId.value = projectId
+  panelCollapsed.value = false
+  graphSelection.value = null
 }
 
-function openProject(p) {
-  projectId.value = p.id
-  step.value = 3
+function rowTone(item) {
+  if (item.isOverBudget || item.isLagging) return 'danger-row'
+  if (item.hasRelatedRisk) return 'warning-row'
+  return 'normal-row'
 }
 
-function goDocs() {
-  step.value = 4
+function statusClass(status) {
+  if (status === '超预算' || status === '滞后') return 'danger'
+  if (status === '预警') return 'warning'
+  if (status === '投产') return 'focus'
+  return 'normal'
 }
 
-function openWorkOrders() {
-  router.push('/work-orders')
+function matchMatrixStatus(project, statusKey) {
+  if (statusKey === 'construct') return project.phaseState === '在建'
+  if (statusKey === 'operation') return project.phaseState === '投产'
+  if (statusKey === 'overBudget') return project.isOverBudget
+  if (statusKey === 'lagging') return project.isLagging
+  return project.primaryStatus === '正常'
+}
+
+function matrixStatusToFilter(statusKey) {
+  const map = {
+    construct: '在建',
+    operation: '投产',
+    overBudget: '超预算',
+    lagging: '滞后',
+    normal: '正常',
+  }
+  return map[statusKey] || 'all'
+}
+
+function focusRiskPath() {
+  graphSelection.value = null
+  graphFocusTick.value += 1
+  panelCollapsed.value = false
+}
+
+function handleGraphSelect(payload) {
+  graphSelection.value = payload
 }
 
 function dispatchWorkOrder() {
+  pulseDispatch.value = true
+  showToast('检测到三重风险项目，已生成核查工单')
   router.push('/work-orders')
 }
 
-function milestoneLabel(status) {
-  if (status === 'done') return '已完成'
-  if (status === 'delay') return '延期'
-  return '进行中'
+function startClock() {
+  currentTime.value = formatNow()
+  clockTimer.value = window.setInterval(() => {
+    currentTime.value = formatNow()
+    refreshText.value = '数据已刷新'
+  }, 1000)
 }
 
-function getRelatedRiskLevel(profile) {
-  let score = 0
-  if (profile.relatedTradeRatio >= 30) score += 3
-  else if (profile.relatedTradeRatio >= 15) score += 2
-  else if (profile.relatedTradeRatio >= 8) score += 1
-
-  if (profile.hiddenRelationCount >= 3) score += 3
-  else if (profile.hiddenRelationCount >= 1) score += 2
-
-  if (profile.overBudgetRate >= 10) score += 1
-  if (score >= 6) return 'critical'
-  if (score >= 4) return 'high'
-  if (score >= 2) return 'medium'
-  return 'low'
+function startKpiAnimation() {
+  let frame = 0
+  kpiProgress.value = 0
+  kpiTimer.value = window.setInterval(() => {
+    frame += 1
+    kpiProgress.value = Math.min(frame / 36, 1)
+    if (kpiProgress.value >= 1) {
+      window.clearInterval(kpiTimer.value)
+      kpiTimer.value = null
+    }
+  }, 24)
 }
 
-function riskText(level) {
-  if (level === 'critical') return '重大'
-  if (level === 'high') return '高'
-  if (level === 'medium') return '中'
-  return '低'
+function runDemo() {
+  queueDemo(() => {
+    matrixDemoCell.value = { sectorId: 's3', statusKey: 'overBudget' }
+  }, 2000)
+  queueDemo(() => {
+    activeScenario.value = '全链穿透'
+    sectorFilter.value = 'all'
+    statusFilter.value = 'all'
+    riskFilter.value = 'all'
+    regionFilter.value = 'all'
+    quickFilter.value = 'all'
+    selectProject('P06')
+  }, 2600)
+  queueDemo(() => {
+    focusRiskPath()
+  }, 3400)
+  queueDemo(() => {
+    showToast('检测到三重风险项目，已生成核查工单')
+  }, 4300)
+  queueDemo(() => {
+    pulseDispatch.value = true
+  }, 5000)
 }
 
-function budgetDeviationText(p) {
-  if (!p) return '-'
-  const rate = ((p.actualYi - p.budgetYi) / p.budgetYi) * 100
-  return rate > 0 ? `超预算 ${fmtPercent(rate)}` : `节余 ${fmtPercent(Math.abs(rate))}`
+function queueDemo(callback, delay) {
+  const timer = window.setTimeout(callback, delay)
+  demoTimers.push(timer)
 }
 
-function signedPercent(value) {
-  const sign = value > 0 ? '+' : ''
-  return `${sign}${fmtPercent(value)}`
+function showToast(message) {
+  toastMessage.value = message
+  toastVisible.value = true
+  if (toastTimer.value) window.clearTimeout(toastTimer.value)
+  toastTimer.value = window.setTimeout(() => {
+    toastVisible.value = false
+  }, 3200)
 }
 
-function fmtYi(value) {
+function sparklinePoints(values) {
+  if (!values.length) return ''
+  return values
+    .map((value, index) => {
+      const x = (index / Math.max(values.length - 1, 1)) * 120
+      const y = 28 - (value / Math.max(...values)) * 24
+      return `${x},${y}`
+    })
+    .join(' ')
+}
+
+function displayMetric(card) {
+  const value = card.target * kpiProgress.value
+  return card.unit === '亿元' ? Math.round(value) : Math.round(value)
+}
+
+function formatYi(value) {
   return Number(value || 0).toFixed(1).replace(/\.0$/, '')
 }
 
-function fmtPercent(value) {
+function formatPercent(value) {
   return `${Number(value || 0).toFixed(1).replace(/\.0$/, '')}%`
 }
 
-function shortName(name) {
-  return name.length > 8 ? `${name.slice(0, 8)}...` : name
+function signedNumber(value) {
+  const prefix = value > 0 ? '+' : ''
+  return `${prefix}${Number(value || 0).toFixed(1).replace(/\.0$/, '')}`
+}
+
+function normalizeRegion(location) {
+  if (!location) return '其他'
+  if (location.includes('甘肃')) return '西北'
+  if (location.includes('上海')) return '华东'
+  if (location.includes('深圳')) return '华南'
+  if (location.includes('江苏')) return '华东'
+  if (location.includes('东南亚')) return '境外'
+  return '其他'
+}
+
+function buildEpcName(projectId) {
+  const map = {
+    P01: '境外路桥 EPC 联合体',
+    P02: '酒泉清能 EPC 总包',
+    P03: '华东检修工程公司',
+    P04: '鹏湾城建 EPC 总包',
+    P05: '海工装备建造联合体',
+    P06: '宁陇 EPC 联合体',
+  }
+  return map[projectId] || '项目 EPC 总包'
+}
+
+function nodeTypeText(type) {
+  const map = {
+    group: '集团',
+    company: '子公司',
+    spv: '项目 SPV',
+    supplier: '承包商/供应商',
+    related: '关联方',
+    person: '自然人',
+  }
+  return map[type] || '图谱节点'
+}
+
+function milestoneColor(status) {
+  if (status === 'delay') return '#f53f3f'
+  if (status === 'running') return '#ff8800'
+  return '#22c55e'
+}
+
+function milestoneStatusText(status) {
+  if (status === 'delay') return '延期'
+  if (status === 'running') return '进行中'
+  return '已完成'
+}
+
+function calcDelayDays(planned, actual, status) {
+  if (actual && actual !== '-') return dayDiff(actual, planned)
+  if (status === 'delay') return 7
+  if (status === 'running') return Math.max(dayDiff(formatDate(Date.now()), planned), 0)
+  return 0
+}
+
+function toTimestamp(value) {
+  return new Date(value).getTime()
+}
+
+function formatNow() {
+  const date = new Date()
+  const yyyy = date.getFullYear()
+  const mm = `${date.getMonth() + 1}`.padStart(2, '0')
+  const dd = `${date.getDate()}`.padStart(2, '0')
+  const hh = `${date.getHours()}`.padStart(2, '0')
+  const mi = `${date.getMinutes()}`.padStart(2, '0')
+  const ss = `${date.getSeconds()}`.padStart(2, '0')
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`
+}
+
+function formatMonthDay(value) {
+  const date = new Date(value)
+  const mm = `${date.getMonth() + 1}`.padStart(2, '0')
+  const dd = `${date.getDate()}`.padStart(2, '0')
+  return `${mm}-${dd}`
+}
+
+function formatDate(value) {
+  const date = new Date(value)
+  const yyyy = date.getFullYear()
+  const mm = `${date.getMonth() + 1}`.padStart(2, '0')
+  const dd = `${date.getDate()}`.padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
+
+function dayDiff(actual, planned) {
+  return Math.round((toTimestamp(actual) - toTimestamp(planned)) / DAY)
 }
 
 function sumBy(list, key) {
   return list.reduce((sum, item) => sum + Number(item[key] || 0), 0)
 }
 
-function average(list) {
-  if (!list.length) return 0
-  return Math.round(list.reduce((sum, value) => sum + Number(value || 0), 0) / list.length)
-}
+const DAY = 24 * 60 * 60 * 1000
+
+onMounted(() => {
+  startClock()
+  startKpiAnimation()
+  runDemo()
+})
+
+onBeforeUnmount(() => {
+  if (clockTimer.value) window.clearInterval(clockTimer.value)
+  if (kpiTimer.value) window.clearInterval(kpiTimer.value)
+  if (toastTimer.value) window.clearTimeout(toastTimer.value)
+  demoTimers.forEach((timer) => window.clearTimeout(timer))
+})
 </script>
 
 <style scoped>
-.view {
-  max-width: 1600px;
+.investment-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: calc(100vh - 108px);
+  color: #e8fbff;
+  font-family: "Source Han Sans SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
 }
 
-.block {
-  padding: 16px 20px;
+.glass-panel {
+  position: relative;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(14, 165, 233, 0.22);
+  background: linear-gradient(135deg, rgba(6, 24, 42, 0.88), rgba(3, 12, 24, 0.82));
+  box-shadow: 0 18px 46px rgba(1, 12, 24, 0.36), inset 0 0 0 1px rgba(6, 182, 212, 0.06);
+  backdrop-filter: blur(18px);
 }
 
-.desc {
-  color: var(--text-muted);
+.glass-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent 10%, rgba(255, 255, 255, 0.05) 18%, transparent 32%);
+  transform: translateX(-120%);
+  animation: panelSweep 8s linear infinite;
+  pointer-events: none;
+}
+
+.invest-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  padding: 16px 18px;
+}
+
+.screen-kicker {
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  color: #7ad8ff;
+  text-transform: uppercase;
+}
+
+.screen-title {
+  margin: 6px 0 8px;
+  font-size: 30px;
+  font-weight: 800;
+  text-shadow: 0 0 14px rgba(14, 165, 233, 0.42), 0 0 22px rgba(6, 182, 212, 0.18);
+}
+
+.screen-desc {
+  margin: 0;
+  max-width: 860px;
+  line-height: 1.7;
+  color: #9ec6d8;
   font-size: 13px;
-  margin: 0 0 16px;
+}
+
+.topbar-right {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.scenario-switcher {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.scenario-btn,
+.ghost-btn,
+.op-btn {
+  border: 1px solid rgba(14, 165, 233, 0.22);
+  background: rgba(8, 28, 46, 0.74);
+  color: #dff8ff;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.scenario-btn {
+  padding: 8px 14px;
+  font-size: 12px;
+}
+
+.scenario-btn.active,
+.scenario-btn:hover,
+.ghost-btn:hover,
+.op-btn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(6, 182, 212, 0.48);
+  box-shadow: 0 10px 22px rgba(3, 17, 32, 0.34), 0 0 16px rgba(6, 182, 212, 0.18);
+}
+
+.scenario-btn.active {
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.28), rgba(6, 182, 212, 0.18));
+}
+
+.topbar-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.meta-card {
+  min-width: 176px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(8, 28, 46, 0.6);
+  border: 1px solid rgba(14, 165, 233, 0.18);
+}
+
+.meta-card.success {
+  border-color: rgba(34, 197, 94, 0.24);
+}
+
+.meta-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: #82c7e7;
+}
+
+.meta-card strong {
+  font-size: 14px;
+  color: #f6fdff;
+}
+
+.invest-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.kpi-card {
+  padding: 14px 16px;
+  min-height: 128px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.kpi-card:hover,
+.chart-card:hover,
+.detail-summary-card:hover,
+.graph-insight-card:hover,
+.bottom-info:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 42px rgba(1, 12, 24, 0.4), 0 0 22px rgba(6, 182, 212, 0.12);
+}
+
+.kpi-card.critical {
+  border-color: rgba(245, 63, 63, 0.5);
+}
+
+.kpi-card.high {
+  border-color: rgba(255, 136, 0, 0.46);
+}
+
+.kpi-card.medium {
+  border-color: rgba(250, 204, 22, 0.44);
+}
+
+.kpi-head,
+.kpi-foot,
+.panel-head,
+.chart-title-row,
+.summary-main,
+.graph-insight-grid,
+.bottom-info-bar,
+.list-head-stats,
+.op-row,
+.filter-bar,
+.panel-tags,
+.bottom-actions,
+.summary-grid,
+.graph-actions,
+.detail-risk-tags,
+.quick-filter-row {
+  display: flex;
+}
+
+.kpi-head,
+.kpi-foot,
+.panel-head,
+.chart-title-row,
+.summary-main,
+.bottom-info-bar {
+  justify-content: space-between;
+}
+
+.kpi-head {
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.kpi-title,
+.kpi-status,
+.kpi-foot,
+.panel-sub,
+.chart-title-row span,
+.project-row-meta,
+.info-label,
+.insight-label {
+  color: #8cc8e4;
+}
+
+.kpi-title {
+  font-size: 12px;
+}
+
+.kpi-status {
+  font-size: 11px;
+}
+
+.kpi-main {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.kpi-main strong {
+  font-size: 34px;
+  font-weight: 900;
+  line-height: 1;
+  color: #ffffff;
+}
+
+.kpi-main span {
+  font-size: 12px;
+  color: #9ed4ea;
+}
+
+.kpi-foot {
+  margin-top: 6px;
+  font-size: 11px;
+}
+
+.kpi-trend {
+  width: 100%;
+  height: 28px;
+  margin-top: 8px;
+}
+
+.portfolio-panel,
+.bottom-panel,
+.list-panel,
+.detail-panel {
+  padding: 14px 16px;
+}
+
+.panel-head {
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+
+.panel-head.compact {
+  margin-bottom: 12px;
+}
+
+.panel-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  text-shadow: 0 0 12px rgba(14, 165, 233, 0.36);
+}
+
+.panel-sub {
+  margin: 4px 0 0;
+  font-size: 12px;
   line-height: 1.6;
 }
 
-.section-gap {
-  margin-top: 24px;
-  padding-top: 20px;
-  border-top: 1px solid rgba(148, 163, 184, 0.14);
-}
-
-.section-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.sub-title {
-  margin: 0;
-  font-size: 17px;
-  font-weight: 600;
-}
-
-.row {
-  display: grid;
-  grid-template-columns: 1.2fr 1fr;
-  gap: 16px;
-  align-items: stretch;
-}
-
-.row-equal {
-  grid-template-columns: 1fr 1fr;
-}
-
-.chart {
-  min-height: 280px;
-}
-
-.chart-tall {
-  min-height: 320px;
-}
-
-.metric-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
-  margin-bottom: 16px;
-}
-
-.metric-card {
-  display: flex;
-  flex-direction: column;
+.panel-tags,
+.list-head-stats,
+.quick-filter-row,
+.graph-actions,
+.detail-risk-tags,
+.bottom-actions,
+.op-row {
   gap: 8px;
-  min-height: 120px;
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: rgba(15, 23, 42, 0.65);
-}
-
-.metric-card.danger {
-  border-color: rgba(239, 68, 68, 0.45);
-  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.12);
-}
-
-.metric-label {
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.metric-value {
-  font-size: 24px;
-  color: #e8f1ff;
-}
-
-.metric-extra {
-  color: #9fb4d6;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.badges {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
   flex-wrap: wrap;
 }
 
-.pill {
-  font-size: 12px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-}
-
-.quick-list {
-  display: grid;
-  gap: 12px;
-}
-
-.quick-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: rgba(15, 23, 42, 0.5);
-  cursor: pointer;
-}
-
-.quick-item:hover,
-.alert-card:hover,
-.insight-card:hover {
-  border-color: rgba(59, 130, 246, 0.45);
-}
-
-.quick-title {
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.quick-meta {
-  margin-top: 4px;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.quick-side {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.quick-num {
-  color: #e8f1ff;
-  font-weight: 600;
-}
-
-.insight-card {
-  padding: 18px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: rgba(15, 23, 42, 0.55);
-}
-
-.insight-line {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 0;
-  border-bottom: 1px dashed rgba(148, 163, 184, 0.16);
-}
-
-.insight-line:last-of-type {
-  border-bottom: none;
-}
-
-.insight-k,
-.muted {
-  color: var(--text-muted);
-}
-
-.insight-v {
-  color: #e8f1ff;
-}
-
-.insight-note {
-  margin: 14px 0 0;
-  color: #9fb4d6;
-  line-height: 1.7;
-  font-size: 13px;
-}
-
-.alert-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.alert-card {
-  padding: 16px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: rgba(15, 23, 42, 0.58);
-}
-
-.alert-card.critical {
-  border-color: rgba(239, 68, 68, 0.5);
-  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.12);
-}
-
-.alert-card.high {
-  border-color: rgba(249, 115, 22, 0.5);
-}
-
-.alert-card.neutral {
-  grid-column: 1 / -1;
-}
-
-.alert-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.alert-type {
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.alert-title {
-  margin-top: 10px;
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.5;
-}
-
-.alert-detail {
-  margin-top: 8px;
-  color: #9fb4d6;
-  line-height: 1.7;
-  font-size: 13px;
-}
-
-.alert-actions,
-.actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 16px;
-  flex-wrap: wrap;
-}
-
-.status-tag {
+.panel-tag,
+.mini-stat,
+.tag-chip,
+.quick-chip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 62px;
-  padding: 4px 10px;
+  padding: 5px 10px;
   border-radius: 999px;
-  border: 1px solid var(--border);
+  font-size: 11px;
+  border: 1px solid rgba(14, 165, 233, 0.16);
+  background: rgba(8, 28, 46, 0.52);
+}
+
+.panel-tag.danger,
+.tag-chip {
+  border-color: rgba(245, 63, 63, 0.26);
+  color: #ffd2d2;
+}
+
+.panel-tag.warning {
+  border-color: rgba(255, 136, 0, 0.26);
+  color: #ffdcb0;
+}
+
+.panel-tag.focus {
+  border-color: rgba(250, 204, 22, 0.26);
+  color: #ffeeb6;
+}
+
+.portfolio-grid {
+  display: grid;
+  grid-template-columns: 1.18fr 0.92fr;
+  gap: 12px;
+}
+
+.chart-card {
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(14, 165, 233, 0.14);
+  background: rgba(2, 12, 24, 0.34);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.chart-title-row {
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.chart-title-row h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.portfolio-chart {
+  height: 300px;
+}
+
+.invest-main-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(360px, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.invest-main-grid.collapsed {
+  grid-template-columns: minmax(0, 1fr) 116px;
+}
+
+.list-panel {
+  min-width: 0;
+}
+
+.filter-bar {
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.filter-bar label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 140px;
+  color: #9bd4ea;
   font-size: 12px;
 }
 
-.status-tag.done {
-  color: var(--risk-green);
-  border-color: rgba(34, 197, 94, 0.35);
+.filter-bar select {
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid rgba(14, 165, 233, 0.16);
+  background: rgba(7, 24, 40, 0.9);
+  color: #ebfbff;
+  padding: 0 12px;
 }
 
-.status-tag.delay {
-  color: var(--risk-red);
-  border-color: rgba(239, 68, 68, 0.35);
-}
-
-.status-tag.running {
-  color: var(--risk-yellow);
-  border-color: rgba(234, 179, 8, 0.35);
-}
-
-.btn {
-  height: 34px;
-  padding: 0 14px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: rgba(15, 23, 42, 0.75);
-  color: #e8f1ff;
+.quick-chip {
   cursor: pointer;
+  color: #cfefff;
 }
 
-.btn-primary {
-  border-color: rgba(59, 130, 246, 0.45);
-  background: rgba(37, 99, 235, 0.2);
+.quick-chip.active {
+  border-color: rgba(6, 182, 212, 0.48);
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.22), rgba(6, 182, 212, 0.18));
 }
 
-.link {
-  color: var(--accent);
+.table-shell {
+  overflow: auto;
+  border-radius: 16px;
+  border: 1px solid rgba(14, 165, 233, 0.12);
+}
+
+.project-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 1220px;
+  font-size: 12px;
+}
+
+.project-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 12px 10px;
+  text-align: center;
+  color: #f0fcff;
+  background: linear-gradient(180deg, rgba(14, 165, 233, 0.26), rgba(6, 182, 212, 0.14));
+}
+
+.project-table td {
+  padding: 11px 10px;
+  text-align: center;
+  color: #dff6ff;
+  border-bottom: 1px solid rgba(14, 165, 233, 0.08);
+}
+
+.align-left {
+  text-align: left !important;
+}
+
+.project-row {
   cursor: pointer;
+  transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
 }
 
-.warn {
-  color: var(--risk-red);
-  font-weight: 600;
+.project-row:nth-child(odd) {
+  background: rgba(255, 255, 255, 0.02);
 }
 
-@media (max-width: 1100px) {
-  .metric-grid,
-  .alert-grid,
-  .row,
-  .row-equal {
-    grid-template-columns: 1fr;
+.project-row:hover {
+  transform: translateY(-2px);
+  background: rgba(14, 165, 233, 0.1);
+  box-shadow: 0 10px 20px rgba(2, 16, 30, 0.22);
+}
+
+.project-row.active {
+  background: rgba(14, 165, 233, 0.14) !important;
+  box-shadow: inset 0 0 0 1px rgba(14, 165, 233, 0.3);
+}
+
+.project-row.danger-row {
+  background: linear-gradient(90deg, rgba(245, 63, 63, 0.16), rgba(245, 63, 63, 0.04)) !important;
+}
+
+.project-row.warning-row {
+  background: linear-gradient(90deg, rgba(255, 136, 0, 0.14), rgba(255, 136, 0, 0.04)) !important;
+}
+
+.project-name-cell {
+  font-weight: 700;
+}
+
+.live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #f53f3f;
+  box-shadow: 0 0 16px rgba(245, 63, 63, 0.9);
+  animation: pulseDot 1.1s ease-in-out infinite;
+}
+
+.status-pill,
+.risk-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 66px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.status-pill.danger,
+.risk-pill.critical {
+  background: linear-gradient(135deg, #f53f3f, #fb7185);
+  color: #fff;
+}
+
+.status-pill.warning,
+.risk-pill.high {
+  background: linear-gradient(135deg, #ff8800, #fb923c);
+  color: #fff;
+}
+
+.status-pill.focus,
+.risk-pill.medium {
+  background: linear-gradient(135deg, #facc16, #fde68a);
+  color: #3a2500;
+}
+
+.status-pill.normal,
+.risk-pill.low {
+  background: linear-gradient(135deg, #22c55e, #4ade80);
+  color: #07230f;
+}
+
+.danger {
+  color: #ffb5b5;
+}
+
+.warning {
+  color: #ffd39a;
+}
+
+.op-btn,
+.ghost-btn,
+.expand-panel-btn {
+  padding: 7px 12px;
+  font-size: 12px;
+}
+
+.op-btn.primary,
+.expand-panel-btn {
+  border-color: rgba(6, 182, 212, 0.42);
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.22), rgba(6, 182, 212, 0.18));
+}
+
+.op-btn.pulse {
+  animation: pulseBtn 1.3s ease-in-out infinite;
+}
+
+.detail-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  position: sticky;
+  top: 12px;
+}
+
+.detail-summary-card {
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(14, 165, 233, 0.14);
+  background: rgba(2, 12, 24, 0.36);
+}
+
+.detail-code {
+  font-size: 12px;
+  color: #8ccde7;
+}
+
+.detail-name {
+  margin: 4px 0;
+  font-size: 22px;
+}
+
+.detail-owner {
+  color: #8ccce1;
+  font-size: 12px;
+}
+
+.summary-main {
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.detail-risk-tags {
+  align-items: flex-start;
+  justify-content: flex-end;
+  max-width: 45%;
+}
+
+.summary-grid {
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.summary-item {
+  min-width: calc(50% - 5px);
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(14, 165, 233, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.summary-item span,
+.ai-kicker,
+.empty-cell {
+  display: block;
+  font-size: 11px;
+  color: #88c6e0;
+}
+
+.summary-item strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 15px;
+  color: #f7fdff;
+}
+
+.ai-conclusion-card {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(245, 63, 63, 0.18);
+  background: linear-gradient(135deg, rgba(245, 63, 63, 0.16), rgba(14, 165, 233, 0.08));
+}
+
+.ai-conclusion-card p {
+  margin: 8px 0 0;
+  line-height: 1.7;
+  color: #ffe6e6;
+  font-size: 13px;
+}
+
+.graph-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.graph-toolbar {
+  align-items: flex-start;
+}
+
+.graph-insight-grid {
+  gap: 10px;
+}
+
+.graph-insight-card,
+.bottom-info {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(14, 165, 233, 0.12);
+  background: rgba(2, 12, 24, 0.32);
+}
+
+.graph-insight-card strong,
+.bottom-info strong {
+  display: block;
+  margin-top: 6px;
+  line-height: 1.6;
+  color: #f7fdff;
+  font-size: 13px;
+}
+
+.graph-insight-card p {
+  margin: 8px 0 0;
+  line-height: 1.6;
+  color: #98c6da;
+  font-size: 12px;
+}
+
+.expand-panel-btn {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 220px;
+  color: #dff8ff;
+}
+
+.bottom-grid {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 12px;
+}
+
+.bottom-chart {
+  height: 310px;
+}
+
+.bottom-info-bar {
+  align-items: stretch;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.bottom-info {
+  min-width: 220px;
+}
+
+.bottom-actions {
+  margin-left: auto;
+  align-items: center;
+}
+
+.risk-toast {
+  position: fixed;
+  top: 88px;
+  right: 22px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(245, 63, 63, 0.34);
+  background: rgba(44, 10, 18, 0.9);
+  color: #fff3f3;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28), 0 0 26px rgba(245, 63, 63, 0.22);
+  z-index: 50;
+}
+
+.toast-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #f53f3f;
+  box-shadow: 0 0 14px rgba(245, 63, 63, 0.92);
+}
+
+.toast-fade-enter-active,
+.toast-fade-leave-active {
+  transition: opacity 0.24s ease, transform 0.24s ease;
+}
+
+.toast-fade-enter-from,
+.toast-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+@keyframes panelSweep {
+  0% {
+    transform: translateX(-120%);
+  }
+  50% {
+    transform: translateX(120%);
+  }
+  100% {
+    transform: translateX(120%);
   }
 }
 
-@media (max-width: 760px) {
-  .section-head,
-  .quick-item {
+@keyframes pulseDot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.42;
+  }
+}
+
+@keyframes pulseBtn {
+  0%,
+  100% {
+    box-shadow: 0 0 0 rgba(14, 165, 233, 0);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(14, 165, 233, 0.4);
+  }
+}
+
+@media (max-width: 1600px) {
+  .invest-kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .portfolio-grid,
+  .bottom-grid,
+  .invest-main-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .invest-main-grid.collapsed {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-panel {
+    position: relative;
+    top: 0;
+  }
+
+  .expand-panel-btn {
+    writing-mode: horizontal-tb;
+    min-height: auto;
+  }
+}
+
+@media (max-width: 1080px) {
+  .invest-topbar,
+  .topbar-right,
+  .topbar-meta,
+  .summary-main,
+  .bottom-info-bar {
     flex-direction: column;
     align-items: flex-start;
   }
 
-  .quick-side {
-    width: 100%;
-    justify-content: space-between;
+  .detail-risk-tags {
+    max-width: none;
+    justify-content: flex-start;
+  }
+
+  .summary-item {
+    min-width: 100%;
+  }
+}
+
+@media (max-width: 760px) {
+  .invest-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .screen-title {
+    font-size: 24px;
+  }
+
+  .portfolio-chart,
+  .bottom-chart {
+    height: 260px;
   }
 }
 </style>

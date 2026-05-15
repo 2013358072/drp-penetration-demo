@@ -11,7 +11,10 @@ import G6 from '@antv/g6'
 const props = defineProps({
   graphData: { type: Object, required: true },
   height: { type: Number, default: 320 },
+  highlightNodes: { type: Array, default: () => [] },
+  highlightEdges: { type: Array, default: () => [] },
 })
+const emit = defineEmits(['select'])
 
 const wrap = ref(null)
 const container = ref(null)
@@ -32,6 +35,7 @@ function buildG6Data(raw) {
   const nodes = (raw.nodes || []).map((n) => ({
     id: n.id,
     label: n.label,
+    raw: n,
     style: { fill: typeColor[n.type] || '#334155', stroke: '#0f172a', lineWidth: 2 },
     labelCfg: { style: { fill: '#e8f1ff', fontSize: 11 } },
   }))
@@ -40,6 +44,7 @@ function buildG6Data(raw) {
     source: e.source,
     target: e.target,
     label: e.label,
+    raw: e,
     style: { stroke: 'rgba(59,130,246,0.45)' },
     labelCfg: {
       autoRotate: true,
@@ -48,6 +53,27 @@ function buildG6Data(raw) {
     },
   }))
   return { nodes, edges }
+}
+
+function edgeMatch(edgeModel, target) {
+  return (
+    (edgeModel.source === target.source && edgeModel.target === target.target) ||
+    (edgeModel.source === target.target && edgeModel.target === target.source)
+  )
+}
+
+function applyExternalHighlight() {
+  if (!graph) return
+  const nodeIds = new Set(props.highlightNodes || [])
+  const edgeTargets = props.highlightEdges || []
+  graph.getNodes().forEach((node) => {
+    graph.setItemState(node, 'highlight', nodeIds.has(node.getID()))
+  })
+  graph.getEdges().forEach((edge) => {
+    const model = edge.getModel()
+    const highlighted = edgeTargets.some((target) => edgeMatch(model, target))
+    graph.setItemState(edge, 'highlight', highlighted)
+  })
 }
 
 function render() {
@@ -89,6 +115,7 @@ function render() {
   const data = buildG6Data(props.graphData)
   graph.data(data)
   graph.render()
+  applyExternalHighlight()
 
   graph.on('node:click', (evt) => {
     const id = evt.item.getID()
@@ -107,6 +134,13 @@ function render() {
     graph.getNodes().forEach((n) => {
       if (neighbors.has(n.getID())) graph.setItemState(n, 'highlight', true)
     })
+    emit('select', { type: 'node', data: evt.item.getModel().raw || evt.item.getModel() })
+  })
+
+  graph.on('edge:click', (evt) => {
+    graph.getEdges().forEach((edge) => graph.setItemState(edge, 'highlight', false))
+    graph.setItemState(evt.item, 'highlight', true)
+    emit('select', { type: 'edge', data: evt.item.getModel().raw || evt.item.getModel() })
   })
 }
 
@@ -129,6 +163,11 @@ onBeforeUnmount(() => {
 watch(
   () => props.graphData,
   () => render(),
+  { deep: true }
+)
+watch(
+  () => [props.highlightNodes, props.highlightEdges],
+  () => applyExternalHighlight(),
   { deep: true }
 )
 watch(
